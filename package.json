@@ -1,0 +1,14 @@
+{
+  "name": "telegram-worker",
+  "version": "1.0.0",
+  "description": "Telegram notification service",
+  "main": "src/index.js",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "wrangler": "^3.19.0"
+  }
+}
