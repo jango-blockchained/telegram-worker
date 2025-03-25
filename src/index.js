@@ -1,43 +1,47 @@
 // telegram-worker/src/index.js - Only accepts requests from the webhook receiver
-addEventListener('fetch', event => {
-  event.respondWith(handleRequest(event.request));
-});
 
-async function handleRequest(request) {
+// ES Module format requires a default export
+export default {
+  async fetch(request, env) {
+    return await handleRequest(request, env);
+  }
+};
+
+async function handleRequest(request, env) {
   // Verify internal service authentication
   const internalKey = request.headers.get('X-Internal-Key');
   const requestId = request.headers.get('X-Request-ID');
-  
-  if (!internalKey || internalKey !== INTERNAL_SERVICE_KEY || !requestId) {
-    return new Response(JSON.stringify({ 
-      success: false, 
-      error: 'Unauthorized' 
+
+  if (!internalKey || internalKey !== env.INTERNAL_SERVICE_KEY || !requestId) {
+    return new Response(JSON.stringify({
+      success: false,
+      error: 'Unauthorized'
     }), { status: 403 });
   }
-  
+
   try {
     const data = await request.json();
-    const { chatId = TELEGRAM_CHAT_ID, message } = data;
-    
+    const { chatId = env.TELEGRAM_CHAT_ID, message } = data;
+
     if (!message) {
       return new Response(JSON.stringify({
         success: false,
         error: 'Missing message parameter'
       }), { status: 400 });
     }
-    
+
     // Send Telegram message
-    const telegramResponse = await sendTelegramMessage(chatId, message);
-    
+    const telegramResponse = await sendTelegramMessage(chatId, message, env);
+
     return new Response(JSON.stringify({
       success: true,
       requestId,
       telegramResponse
     }));
-    
+
   } catch (error) {
     console.error('Error sending Telegram message:', error);
-    
+
     return new Response(JSON.stringify({
       success: false,
       error: error.message || 'Unknown error occurred'
@@ -45,8 +49,8 @@ async function handleRequest(request) {
   }
 }
 
-async function sendTelegramMessage(chatId, message) {
-  const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+async function sendTelegramMessage(chatId, message, env) {
+  const telegramApiUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
 
   const response = await fetch(telegramApiUrl, {
     method: 'POST',
