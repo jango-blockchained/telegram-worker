@@ -1,15 +1,14 @@
 # Telegram Worker
 
-A Cloudflare Worker service that handles Telegram bot interactions for the grid trading system. This worker manages notifications, commands, and user interactions through Telegram.
+A Cloudflare Worker service that handles Telegram notifications for the grid trading system. This worker sends trading alerts and notifications through Telegram.
+
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/yourusername/grid-trading/tree/main/telegram-worker)
 
 ## Features
 
 - Trade notifications
 - Error alerts
-- Command processing
-- User authentication
-- Message formatting
-- Interactive buttons and menus
+- Simple message formatting with HTML
 
 ## Prerequisites
 
@@ -52,12 +51,6 @@ bun run dev -- --port 8790
 
 The worker uses environment variables from `.dev.vars` during local development instead of the values in `wrangler.toml` or Cloudflare secrets.
 
-When testing webhook functionality with Telegram, you may need to use a service like ngrok to expose your local server to the internet:
-
-```bash
-ngrok http 8790
-```
-
 ### Production Deployment
 
 Deploy to production:
@@ -70,46 +63,20 @@ bun run deploy
 ### Send Message
 
 ```http
-POST /send
+POST /
 Content-Type: application/json
-Authorization: Bearer your_internal_key
+X-Internal-Key: your_internal_key
+X-Request-ID: unique_request_id
 
 {
-  "chat_id": 123456789,
-  "text": "Trade executed: BTCUSDT LONG @ 65000",
-  "parse_mode": "HTML"
+  "chatId": 123456789,
+  "message": "Trade executed: BTCUSDT LONG @ 65000"
 }
 ```
-
-### Send Trade Alert
-
-```http
-POST /trade-alert
-Content-Type: application/json
-Authorization: Bearer your_internal_key
-
-{
-  "exchange": "binance",
-  "symbol": "BTCUSDT",
-  "action": "LONG",
-  "price": 65000,
-  "quantity": 0.001,
-  "success": true,
-  "orderId": "123456"
-}
-```
-
-## Bot Commands
-
-- `/start` - Initialize the bot
-- `/status` - Get current trading status
-- `/positions` - List open positions
-- `/balance` - Show account balance
-- `/help` - Display help message
 
 ## Message Formatting
 
-The worker supports both HTML and Markdown formatting:
+The worker supports HTML formatting:
 
 ```javascript
 // HTML format
@@ -120,33 +87,21 @@ Symbol: <code>BTCUSDT</code>
 Action: <code>LONG</code>
 Price: <code>65000</code>
 `;
-
-// Markdown format
-const message = `
-*New Trade*
-Exchange: \`Binance\`
-Symbol: \`BTCUSDT\`
-Action: \`LONG\`
-Price: \`65000\`
-`;
 ```
 
 ## Security
 
-- Internal service authentication
-- Allowed chat IDs validation
-- Command access control
-- Rate limiting per chat
+- Internal service authentication with X-Internal-Key
+- Request ID validation with X-Request-ID
 - Error message sanitization
 
 ## Error Handling
 
-The worker includes comprehensive error handling for:
+The worker includes error handling for:
 - Telegram API errors
 - Authentication failures
 - Invalid message format
-- Network issues
-- Rate limiting
+- Missing required parameters
 
 ## Response Format
 
@@ -154,8 +109,10 @@ Success:
 ```json
 {
   "success": true,
-  "message_id": 123,
-  "chat_id": 123456789
+  "requestId": "unique_request_id",
+  "telegramResponse": {
+    // Telegram API response
+  }
 }
 ```
 
@@ -167,28 +124,14 @@ Error:
 }
 ```
 
-## Interactive Features
+## Future Enhancements
 
-The worker supports Telegram's interactive features:
-- Inline keyboards
-- Custom keyboards
-- Callback queries
-- Message editing
-- Interactive menus
-
-Example inline keyboard:
-```javascript
-{
-  "reply_markup": {
-    "inline_keyboard": [
-      [
-        { "text": "View Position", "callback_data": "position_123" },
-        { "text": "Close Position", "callback_data": "close_123" }
-      ]
-    ]
-  }
-}
-```
+Planned features for future versions:
+- Command processing
+- User authentication
+- Interactive buttons and menus
+- Callback query handling
+- Custom keyboard support
 
 ## Contributing
 

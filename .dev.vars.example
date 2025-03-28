@@ -1,0 +1,8 @@
+# Telegram Worker Environment Variables
+INTERNAL_SERVICE_KEY=your_internal_service_key_here
+TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+ALLOWED_CHAT_IDS=12345678,87654321
+
+# Note: This file provides example values for local development.
+# Copy this file to .dev.vars and replace with your actual values.
+# .dev.vars is ignored by git to prevent committing sensitive information. 
