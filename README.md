@@ -1,8 +1,8 @@
 # Telegram Worker
 
-A Cloudflare Worker service that handles Telegram notifications for the grid trading system. This worker sends trading alerts and notifications through Telegram.
+A Cloudflare Worker service that handles Telegram notifications for the hoox trading system. This worker sends trading alerts and notifications through Telegram.
 
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/yourusername/grid-trading/tree/main/telegram-worker)
+[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/yourusername/hoox-trading/tree/main/telegram-worker)
 
 ## Features
 
