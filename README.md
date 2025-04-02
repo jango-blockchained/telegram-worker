@@ -25,14 +25,21 @@ A Cloudflare Worker service that handles Telegram notifications for the hoox tra
 bun install
 ```
 
-2. Configure environment variables in `.dev.vars` for local development:
+2. Set your Cloudflare account ID in `wrangler.toml`:
+```toml
+name = "telegram-worker"
+account_id = "your_account_id_here"
+main = "src/index.js"
+```
+
+3. Configure environment variables in `.dev.vars` for local development:
 ```env
 INTERNAL_SERVICE_KEY=your_internal_key
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
 ALLOWED_CHAT_IDS=123456789,987654321
 ```
 
-3. Configure production secrets:
+4. Configure production secrets:
 ```bash
 wrangler secret put INTERNAL_SERVICE_KEY
 wrangler secret put TELEGRAM_BOT_TOKEN
