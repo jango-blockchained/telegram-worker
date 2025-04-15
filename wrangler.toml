@@ -1,5 +1,5 @@
 name = "telegram-worker"
-account_id = "debc6545e63bea36be059cbc82d80ec8"
+account_id = "profile"
 main = "src/index.js"
 compatibility_date = "2023-12-01"
 
