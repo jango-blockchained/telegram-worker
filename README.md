@@ -1,158 +1,98 @@
 # Telegram Worker
 
-A Cloudflare Worker service that handles Telegram notifications for the hoox trading system. This worker sends trading alerts and notifications through Telegram.
-
-[![Deploy to Cloudflare Workers](https://deploy.workers.cloudflare.com/button)](https://deploy.workers.cloudflare.com/?url=https://github.com/yourusername/hoox-trading/tree/main/telegram-worker)
+A Cloudflare Worker service that sends Telegram messages, typically triggered by the `webhook-receiver`. This worker accepts requests via the standardized `/process` endpoint.
 
 ## Features
 
-- Trade notifications
-- Error alerts
-- Simple message formatting with HTML
+- Sends formatted messages (HTML) to specified Telegram chats.
+- Secure authentication via shared internal key with `webhook-receiver`.
+- Uses default chat ID from secrets if not provided in the request.
 
 ## Prerequisites
 
 - Node.js >= 16
-- Bun (for package management)
+- Bun (or npm/yarn)
 - Wrangler CLI
 - Cloudflare Workers account
-- Telegram Bot Token (from @BotFather)
+- Telegram Bot Token (obtained from @BotFather).
 
 ## Setup
 
-1. Install dependencies:
-
-```bash
-bun install
-```
-
-2. Set your Cloudflare account ID in `wrangler.toml`:
-
-```toml
-name = "telegram-worker"
-account_id = "your_account_id_here"
-main = "src/index.js"
-```
-
-3. Configure environment variables in `.dev.vars` for local development:
-
-```env
-INTERNAL_SERVICE_KEY=your_internal_key
-TELEGRAM_BOT_TOKEN=your_telegram_bot_token
-ALLOWED_CHAT_IDS=123456789,987654321
-```
-
-4. Configure production secrets:
-
-```bash
-wrangler secret put INTERNAL_SERVICE_KEY
-wrangler secret put TELEGRAM_BOT_TOKEN
-wrangler secret put ALLOWED_CHAT_IDS
-```
+1.  Install dependencies:
+    ```bash
+    bun install
+    ```
+2.  Set your Cloudflare account ID in `wrangler.toml`.
+3.  Configure Secrets (via Cloudflare dashboard Secrets Store or `wrangler secret put`):
+    *   `WEBHOOK_INTERNAL_KEY`: The **shared** secret key used for authentication with the `webhook-receiver`. Bind this to `INTERNAL_KEY_BINDING` in `wrangler.toml`.
+    *   `TELEGRAM_BOT_TOKEN_MAIN`: Your Telegram Bot Token. Bind this to `TG_BOT_TOKEN_BINDING`.
+    *   `TELEGRAM_CHAT_ID_DEFAULT`: The default Telegram Chat ID to send messages to if none is specified in the request payload. Bind this to `TG_CHAT_ID_BINDING`.
+4.  For local development, create a `.dev.vars` file and define the secrets:
+    ```.dev.vars
+    # Mock secret bindings for local dev:
+    INTERNAL_KEY_BINDING="your_shared_internal_secret"
+    TG_BOT_TOKEN_BINDING="your_telegram_bot_token"
+    TG_CHAT_ID_BINDING="your_default_telegram_chat_id"
+    ```
 
 ## Development
 
-### Local Development
-
-For local development, this worker should run on port 8790:
-
+Run locally (e.g., on port 8790):
 ```bash
-bun run dev -- --port 8790
+bun run dev --port 8790
 ```
 
-The worker uses environment variables from `.dev.vars` during local development instead of the values in `wrangler.toml` or Cloudflare secrets.
-
-### Production Deployment
-
-Deploy to production:
-
+Deploy:
 ```bash
 bun run deploy
 ```
 
-## API Usage
+## API Interface
 
-### Send Message
+This worker **only** accepts requests from the `webhook-receiver` (or another authenticated internal service) on the `/process` endpoint.
 
-```http
-POST /
-Content-Type: application/json
-X-Internal-Key: your_internal_key
-X-Request-ID: unique_request_id
+- **Method:** `POST`
+- **Endpoint:** `/process`
+- **Content-Type:** `application/json`
+- **Expected Request Body:**
+  ```json
+  {
+    "requestId": "<uuid_from_receiver>",
+    "internalAuthKey": "YOUR_INTERNAL_SHARED_SECRET", // Validated against INTERNAL_KEY_BINDING
+    "payload": {
+      // --- Telegram-specific payload fields below ---
+      "message": "<b>Trade Alert!</b>\nSymbol: <code>BTCUSDT</code>\nAction: LONG", // Required (HTML formatting supported)
+      "chatId": "123456789"  // Optional (Target chat ID. If omitted, uses default from TG_CHAT_ID_BINDING)
+    }
+  }
+  ```
 
-{
-  "chatId": 123456789,
-  "message": "Trade executed: BTCUSDT LONG @ 65000"
-}
-```
+- **Response Format:**
+
+  **Success:**
+  ```json
+  {
+    "success": true,
+    "result": { /* Raw JSON response from Telegram Bot API's sendMessage method */ },
+    "error": null
+  }
+  ```
+
+  **Error:**
+  ```json
+  {
+    "success": false,
+    "result": null,
+    "error": "<Error message describing the failure (e.g., Authentication failed, Missing message in payload, Telegram API request failed: ...)>"
+  }
+  ```
 
 ## Message Formatting
 
-The worker supports HTML formatting:
-
-```javascript
-// HTML format
-const message = `
-<b>New Trade</b>
-Exchange: <code>Binance</code>
-Symbol: <code>BTCUSDT</code>
-Action: <code>LONG</code>
-Price: <code>65000</code>
-`;
-```
+The worker sends messages with `parse_mode` set to `HTML`. You can include HTML tags like `<b>`, `<i>`, `<code>`, `<pre>`, `<a>` in the `message` field of the payload.
 
 ## Security
 
-- Internal service authentication with X-Internal-Key
-- Request ID validation with X-Request-ID
-- Error message sanitization
-
-## Error Handling
-
-The worker includes error handling for:
-
-- Telegram API errors
-- Authentication failures
-- Invalid message format
-- Missing required parameters
-
-## Response Format
-
-Success:
-
-```json
-{
-  "success": true,
-  "requestId": "unique_request_id",
-  "telegramResponse": {
-    // Telegram API response
-  }
-}
-```
-
-Error:
-
-```json
-{
-  "success": false,
-  "error": "Error message"
-}
-```
-
-## Future Enhancements
-
-Planned features for future versions:
-
-- Command processing
-- User authentication
-- Interactive buttons and menus
-- Callback query handling
-- Custom keyboard support
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch
-3. Commit your changes
-4. Push to the branch
-5. Create a new Pull Request
+- All requests *must* be received on the `/process` endpoint.
+- Requests *must* include a valid `internalAuthKey` in the body, matching the `WEBHOOK_INTERNAL_KEY` secret.
+- The Telegram Bot Token is stored securely using Cloudflare Workers Secrets.

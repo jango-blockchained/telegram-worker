@@ -8,7 +8,7 @@ enabled = true
 
 # Secrets managed via Cloudflare Secrets Store
 secrets_store_secrets = [
-  { binding = "INTERNAL_KEY_BINDING", store_id = "<YOUR_STORE_ID>", secret_name = "TELEGRAM_INTERNAL_KEY" },
+  { binding = "INTERNAL_KEY_BINDING", store_id = "<YOUR_STORE_ID>", secret_name = "WEBHOOK_INTERNAL_KEY" },
   { binding = "TG_BOT_TOKEN_BINDING", store_id = "<YOUR_STORE_ID>", secret_name = "TELEGRAM_BOT_TOKEN_MAIN" },
   { binding = "TG_CHAT_ID_BINDING", store_id = "<YOUR_STORE_ID>", secret_name = "TELEGRAM_CHAT_ID_DEFAULT" }
 ]
