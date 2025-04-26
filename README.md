@@ -21,11 +21,13 @@ A Cloudflare Worker service that handles Telegram notifications for the hoox tra
 ## Setup
 
 1. Install dependencies:
+
 ```bash
 bun install
 ```
 
 2. Set your Cloudflare account ID in `wrangler.toml`:
+
 ```toml
 name = "telegram-worker"
 account_id = "your_account_id_here"
@@ -33,6 +35,7 @@ main = "src/index.js"
 ```
 
 3. Configure environment variables in `.dev.vars` for local development:
+
 ```env
 INTERNAL_SERVICE_KEY=your_internal_key
 TELEGRAM_BOT_TOKEN=your_telegram_bot_token
@@ -40,6 +43,7 @@ ALLOWED_CHAT_IDS=123456789,987654321
 ```
 
 4. Configure production secrets:
+
 ```bash
 wrangler secret put INTERNAL_SERVICE_KEY
 wrangler secret put TELEGRAM_BOT_TOKEN
@@ -61,6 +65,7 @@ The worker uses environment variables from `.dev.vars` during local development 
 ### Production Deployment
 
 Deploy to production:
+
 ```bash
 bun run deploy
 ```
@@ -105,6 +110,7 @@ Price: <code>65000</code>
 ## Error Handling
 
 The worker includes error handling for:
+
 - Telegram API errors
 - Authentication failures
 - Invalid message format
@@ -113,6 +119,7 @@ The worker includes error handling for:
 ## Response Format
 
 Success:
+
 ```json
 {
   "success": true,
@@ -124,6 +131,7 @@ Success:
 ```
 
 Error:
+
 ```json
 {
   "success": false,
@@ -134,6 +142,7 @@ Error:
 ## Future Enhancements
 
 Planned features for future versions:
+
 - Command processing
 - User authentication
 - Interactive buttons and menus
@@ -146,4 +155,4 @@ Planned features for future versions:
 2. Create your feature branch
 3. Commit your changes
 4. Push to the branch
-5. Create a new Pull Request 
+5. Create a new Pull Request
