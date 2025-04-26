@@ -9,19 +9,32 @@ export default {
 
 async function handleRequest(request, env) {
   // Verify internal service authentication
-  const internalKey = request.headers.get('X-Internal-Key');
+  const internalKeyHeader = request.headers.get('X-Internal-Key');
   const requestId = request.headers.get('X-Request-ID');
 
-  if (!internalKey || internalKey !== env.INTERNAL_SERVICE_KEY || !requestId) {
-    return new Response(JSON.stringify({
-      success: false,
-      error: 'Unauthorized'
-    }), { status: 403 });
+  const expectedInternalKey = await env.INTERNAL_KEY_BINDING?.get();
+
+  if (!expectedInternalKey) {
+    console.error('INTERNAL_KEY_BINDING binding not configured or accessible.');
+    return new Response(JSON.stringify({ success: false, error: 'Service configuration error' }), { status: 500 });
+  }
+
+  if (!internalKeyHeader || internalKeyHeader !== expectedInternalKey || !requestId) {
+    console.warn('Unauthorized attempt blocked.');
+    return new Response(JSON.stringify({ success: false, error: 'Unauthorized' }), { status: 403 });
   }
 
   try {
     const data = await request.json();
-    const { chatId = env.TELEGRAM_CHAT_ID, message } = data;
+    // Get default chat ID from secret binding
+    const defaultChatId = await env.TG_CHAT_ID_BINDING?.get();
+    const chatId = data.chatId || defaultChatId;
+    const message = data.message;
+
+    if (!chatId) {
+       console.error('Chat ID not provided in request and TG_CHAT_ID_BINDING binding not configured or accessible.');
+       return new Response(JSON.stringify({ success: false, error: 'Chat ID configuration error' }), { status: 500 });
+    }
 
     if (!message) {
       return new Response(JSON.stringify({
@@ -50,7 +63,13 @@ async function handleRequest(request, env) {
 }
 
 async function sendTelegramMessage(chatId, message, env) {
-  const telegramApiUrl = `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/sendMessage`;
+  const botToken = await env.TG_BOT_TOKEN_BINDING?.get();
+  if (!botToken) {
+    console.error('TG_BOT_TOKEN_BINDING binding not configured or accessible.');
+    throw new Error('Telegram bot token not configured.');
+  }
+
+  const telegramApiUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
 
   const response = await fetch(telegramApiUrl, {
     method: 'POST',
