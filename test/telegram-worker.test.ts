@@ -1,6 +1,8 @@
 import { describe, expect, test, beforeEach, jest } from "@jest/globals";
 import telegramWorker from "../src/index.js";
 
+const PROCESS_ENDPOINT = "/process"; // Define the endpoint used in the worker
+
 describe("Telegram Worker", () => {
   const TEST_INTERNAL_KEY = "test-internal-key";
   const TEST_BOT_TOKEN = "test-bot-token";
@@ -63,10 +65,10 @@ describe("Telegram Worker", () => {
       chatId: TEST_CHAT_ID,
       internalKey: null,
     }); // No internal key configured
-    const request = new Request("https://telegram-worker.workers.dev", {
+    const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, {
       method: "POST",
-      headers: { /* ... headers ... */ "X-Internal-Key": "invalid-key" },
-      body: JSON.stringify(validNotification),
+      headers: { "X-Internal-Key": "invalid-key" },
+      body: JSON.stringify({ payload: validNotification, internalAuthKey: "invalid-key", requestId: "test-req-1" }),
     });
 
     const response = await telegramWorker.fetch(request, mockEnv);
@@ -75,12 +77,12 @@ describe("Telegram Worker", () => {
     expect(mockEnv.INTERNAL_KEY_BINDING.get).toHaveBeenCalledTimes(1);
   });
 
-  test("rejects request if header key doesn't match secret", async () => {
+  test("rejects request if internalAuthKey doesn't match secret", async () => {
     // mockEnv has TEST_INTERNAL_KEY
-    const request = new Request("https://telegram-worker.workers.dev", {
+    const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, {
       method: "POST",
-      headers: { /* ... headers ... */ "X-Internal-Key": "wrong-key" }, // Doesn't match
-      body: JSON.stringify(validNotification),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: validNotification, internalAuthKey: "wrong-key", requestId: "test-req-2" }),
     });
     const response = await telegramWorker.fetch(request, mockEnv);
     expect(response.status).toBe(403); // Unauthorized
@@ -89,13 +91,10 @@ describe("Telegram Worker", () => {
   });
 
   test("sends telegram message with explicit chat ID", async () => {
-    const request = new Request("https://telegram-worker.workers.dev", {
+    const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, {
       method: "POST",
-      headers: {
-        /* ... headers ... */ "X-Internal-Key": TEST_INTERNAL_KEY,
-        "X-Request-ID": "req-1",
-      },
-      body: JSON.stringify(validNotification),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: validNotification, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-1" }),
     });
 
     const response = await telegramWorker.fetch(request, mockEnv);
@@ -115,13 +114,10 @@ describe("Telegram Worker", () => {
   });
 
   test("sends telegram message with default chat ID from binding", async () => {
-    const request = new Request("https://telegram-worker.workers.dev", {
+    const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, {
       method: "POST",
-      headers: {
-        /* ... headers ... */ "X-Internal-Key": TEST_INTERNAL_KEY,
-        "X-Request-ID": "req-2",
-      },
-      body: JSON.stringify(validNotificationDefaultChat),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: validNotificationDefaultChat, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-2" }),
     });
 
     const response = await telegramWorker.fetch(request, mockEnv);
@@ -143,13 +139,10 @@ describe("Telegram Worker", () => {
       botToken: TEST_BOT_TOKEN,
       chatId: null,
     }); // Default chat ID is null
-    const request = new Request("https://telegram-worker.workers.dev", {
+    const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, {
       method: "POST",
-      headers: {
-        /* ... headers ... */ "X-Internal-Key": TEST_INTERNAL_KEY,
-        "X-Request-ID": "req-3",
-      },
-      body: JSON.stringify(validNotificationDefaultChat), // Request has no chat ID
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: validNotificationDefaultChat, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-3" }),
     });
 
     const response = await telegramWorker.fetch(request, mockEnv);
@@ -165,13 +158,10 @@ describe("Telegram Worker", () => {
       botToken: null,
       chatId: TEST_CHAT_ID,
     }); // Bot token is null
-    const request = new Request("https://telegram-worker.workers.dev", {
+    const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, {
       method: "POST",
-      headers: {
-        /* ... headers ... */ "X-Internal-Key": TEST_INTERNAL_KEY,
-        "X-Request-ID": "req-4",
-      },
-      body: JSON.stringify(validNotification),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: validNotification, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-4" }),
     });
 
     const response = await telegramWorker.fetch(request, mockEnv);
@@ -184,13 +174,10 @@ describe("Telegram Worker", () => {
   test("handles Telegram API fetch errors", async () => {
     fetchMock.mockRejectedValue(new Error("Network Error")); // Simulate fetch failure
 
-    const request = new Request("https://telegram-worker.workers.dev", {
+    const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, {
       method: "POST",
-      headers: {
-        /* ... headers ... */ "X-Internal-Key": TEST_INTERNAL_KEY,
-        "X-Request-ID": "req-5",
-      },
-      body: JSON.stringify(validNotification),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: validNotification, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-5" }),
     });
 
     const response = await telegramWorker.fetch(request, mockEnv);
@@ -207,18 +194,16 @@ describe("Telegram Worker", () => {
       )
     );
 
-    const request = new Request("https://telegram-worker.workers.dev", {
+    const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, {
       method: "POST",
-      headers: {
-        /* ... headers ... */ "X-Internal-Key": TEST_INTERNAL_KEY,
-        "X-Request-ID": "req-6",
-      },
-      body: JSON.stringify(validNotification),
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload: validNotification, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-6" }),
     });
 
     const response = await telegramWorker.fetch(request, mockEnv);
     expect(response.status).toBe(500);
     const responseData = await response.json();
-    expect(responseData.error).toContain("Telegram API error:");
+    expect(responseData.error).toContain("Telegram API request failed");
+    expect(responseData.error).toContain("status 404");
   });
 });

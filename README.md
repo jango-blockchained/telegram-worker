@@ -24,9 +24,9 @@ A Cloudflare Worker service that sends Telegram messages, typically triggered by
     ```
 2.  Set your Cloudflare account ID in `wrangler.toml`.
 3.  Configure Secrets (via Cloudflare dashboard Secrets Store or `wrangler secret put`):
-    *   `WEBHOOK_INTERNAL_KEY`: The **shared** secret key used for authentication with the `webhook-receiver`. Bind this to `INTERNAL_KEY_BINDING` in `wrangler.toml`.
-    *   `TELEGRAM_BOT_TOKEN_MAIN`: Your Telegram Bot Token. Bind this to `TG_BOT_TOKEN_BINDING`.
-    *   `TELEGRAM_CHAT_ID_DEFAULT`: The default Telegram Chat ID to send messages to if none is specified in the request payload. Bind this to `TG_CHAT_ID_BINDING`.
+    - `WEBHOOK_INTERNAL_KEY`: The **shared** secret key used for authentication with the `webhook-receiver`. Bind this to `INTERNAL_KEY_BINDING` in `wrangler.toml`.
+    - `TELEGRAM_BOT_TOKEN_MAIN`: Your Telegram Bot Token. Bind this to `TG_BOT_TOKEN_BINDING`.
+    - `TELEGRAM_CHAT_ID_DEFAULT`: The default Telegram Chat ID to send messages to if none is specified in the request payload. Bind this to `TG_CHAT_ID_BINDING`.
 4.  For local development, create a `.dev.vars` file and define the secrets:
     ```.dev.vars
     # Mock secret bindings for local dev:
@@ -38,11 +38,13 @@ A Cloudflare Worker service that sends Telegram messages, typically triggered by
 ## Development
 
 Run locally (e.g., on port 8790):
+
 ```bash
 bun run dev --port 8790
 ```
 
 Deploy:
+
 ```bash
 bun run deploy
 ```
@@ -55,6 +57,7 @@ This worker **only** accepts requests from the `webhook-receiver` (or another au
 - **Endpoint:** `/process`
 - **Content-Type:** `application/json`
 - **Expected Request Body:**
+
   ```json
   {
     "requestId": "<uuid_from_receiver>",
@@ -62,7 +65,7 @@ This worker **only** accepts requests from the `webhook-receiver` (or another au
     "payload": {
       // --- Telegram-specific payload fields below ---
       "message": "<b>Trade Alert!</b>\nSymbol: <code>BTCUSDT</code>\nAction: LONG", // Required (HTML formatting supported)
-      "chatId": "123456789"  // Optional (Target chat ID. If omitted, uses default from TG_CHAT_ID_BINDING)
+      "chatId": "123456789" // Optional (Target chat ID. If omitted, uses default from TG_CHAT_ID_BINDING)
     }
   }
   ```
@@ -70,15 +73,19 @@ This worker **only** accepts requests from the `webhook-receiver` (or another au
 - **Response Format:**
 
   **Success:**
+
   ```json
   {
     "success": true,
-    "result": { /* Raw JSON response from Telegram Bot API's sendMessage method */ },
+    "result": {
+      /* Raw JSON response from Telegram Bot API's sendMessage method */
+    },
     "error": null
   }
   ```
 
   **Error:**
+
   ```json
   {
     "success": false,
@@ -93,6 +100,6 @@ The worker sends messages with `parse_mode` set to `HTML`. You can include HTML 
 
 ## Security
 
-- All requests *must* be received on the `/process` endpoint.
-- Requests *must* include a valid `internalAuthKey` in the body, matching the `WEBHOOK_INTERNAL_KEY` secret.
+- All requests _must_ be received on the `/process` endpoint.
+- Requests _must_ include a valid `internalAuthKey` in the body, matching the `WEBHOOK_INTERNAL_KEY` secret.
 - The Telegram Bot Token is stored securely using Cloudflare Workers Secrets.
