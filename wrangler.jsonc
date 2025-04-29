@@ -35,5 +35,12 @@
       "binding": "VECTORIZE_INDEX",
       "index_name": "my-rag-index"
     }
+  ],
+  "ai": {
+    "binding": "AI"
+  },
+  "services": [
+    { "binding": "TRADE_API", "service": "trade-worker" },
+    { "binding": "WEBHOOK_RECEIVER_API", "service": "webhook-receiver" }
   ]
 } 
