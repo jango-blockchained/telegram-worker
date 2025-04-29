@@ -23,6 +23,12 @@ describe("Telegram Worker", () => {
     TG_CHAT_ID_BINDING: {
       get: jest.fn().mockResolvedValue(secrets.chatId),
     },
+    // Add mock for CONFIG_KV used by middleware
+    CONFIG_KV: {
+      get: jest.fn().mockResolvedValue(null), // Default mock
+      put: jest.fn().mockResolvedValue(undefined),
+    } as any,
+    // TODO: Add mocks for AI, VECTORIZE_INDEX, UPLOADS_BUCKET if needed
   });
 
   let mockEnv: ReturnType<typeof createMockEnv>;
@@ -85,7 +91,7 @@ describe("Telegram Worker", () => {
       body: JSON.stringify({ payload: validNotification, internalAuthKey: "wrong-key", requestId: "test-req-2" }),
     });
     const response = await telegramWorker.fetch(request, mockEnv);
-    expect(response.status).toBe(403); // Unauthorized
+    expect(response.status).toBe(401); // Unauthorized
     expect(fetchMock).not.toHaveBeenCalled();
     expect(mockEnv.INTERNAL_KEY_BINDING.get).toHaveBeenCalledTimes(1);
   });
