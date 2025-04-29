@@ -204,6 +204,7 @@ describe("Telegram Worker", () => {
     expect(response.status).toBe(500);
     const responseData = await response.json();
     expect(responseData.error).toContain("Telegram API request failed");
-    expect(responseData.error).toContain("status 404");
+    expect(responseData.error).toContain("(404)");
+    expect(responseData.error).toContain("Chat not found");
   });
 });
