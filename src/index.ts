@@ -129,7 +129,7 @@ function createJsonResponse(
  * @returns A promise that resolves to an array of embedding vectors.
  * @throws If the AI binding is not configured or the API call fails.
  */
-async function generateEmbeddings(text: string | string[], env: Env): Promise<number[][]> {
+export async function generateEmbeddings(text: string | string[], env: Env): Promise<number[][]> {
   if (!env.AI) {
     console.error("AI binding is not configured in the environment.");
     throw new Error("AI service not available.");
@@ -162,7 +162,7 @@ async function generateEmbeddings(text: string | string[], env: Env): Promise<nu
  * @param env The worker environment containing the Vectorize binding.
  * @throws If the Vectorize binding is not configured or the API call fails.
  */
-async function insertEmbeddings(
+export async function insertEmbeddings(
   vectors: number[][],
   metadata: TelegramMessageMetadata[],
   env: Env
@@ -207,7 +207,7 @@ async function insertEmbeddings(
  * @returns A promise that resolves to the Vectorize query results.
  * @throws If bindings are not configured or API calls fail.
  */
-async function queryEmbeddings(
+export async function queryEmbeddings(
   queryText: string,
   env: Env,
   topK: number = 3
@@ -309,7 +309,7 @@ async function sendTelegramNotification(
  * @param env Environment containing R2 binding.
  * @returns The latest R2ObjectBody or null if none found or error occurs.
  */
-async function handleGetLatestTradeSignalR2(env: Env): Promise<R2ObjectBody | null> {
+export async function handleGetLatestTradeSignalR2(env: Env): Promise<R2ObjectBody | null> {
   if (!env.UPLOADS_BUCKET) {
     console.error("R2_BUCKET binding is not configured.");
     return null;
