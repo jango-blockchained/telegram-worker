@@ -22,5 +22,18 @@
       "id": "c5917667a21745e390ff969f32b1847d"
       // "preview_id": "<YOUR_PREVIEW_ID>" // Add preview ID for local dev/testing
     }
+  ],
+  "r2_buckets": [
+    {
+      "binding": "UPLOADS_BUCKET",
+      "bucket_name": "user-uploads"
+      // "preview_bucket_name": "preview-user-uploads" // Optional
+    }
+  ],
+  "vectorize": [
+    {
+      "binding": "VECTORIZE_INDEX",
+      "index_name": "my-rag-index"
+    }
   ]
 } 
