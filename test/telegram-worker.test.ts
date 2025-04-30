@@ -1,28 +1,53 @@
 import { describe, expect, test, beforeEach, mock, afterEach, beforeAll, Mock } from "bun:test";
-import telegramWorker, { generateEmbeddings, insertEmbeddings, queryEmbeddings, handleGetLatestTradeSignalR2 } from "../src/index.js";
+import telegramWorker, { 
+    generateEmbeddings, 
+    insertEmbeddings, 
+    queryEmbeddings, 
+    handleGetLatestTradeSignalR2, 
+} from "../src/index.js";
+import type { KVNamespace, R2Bucket, VectorizeIndex, Fetcher } from '@cloudflare/workers-types';
 
-// Define basic types for mocked bindings
+// --- Mock Types --- 
 interface MockBinding<T> {
   get: Mock<() => Promise<T | null>>;
 }
-interface MockKV {
+interface MockKV { // Using any for simplicity
   get: Mock<() => Promise<any>>;
-  put: Mock<() => Promise<undefined>>;
+  put: Mock<() => Promise<any>>;
+  list?: Mock<() => Promise<any>>;
+  delete?: Mock<() => Promise<any>>;
 }
-interface MockAI {
+interface MockAI { // Using any as @cloudflare/ai types might not be installed
   run: Mock<(...args: any[]) => Promise<any>>;
 }
-interface MockVectorize {
+interface MockVectorize { // Simplified
   insert: Mock<(...args: any[]) => Promise<any>>;
   query: Mock<(...args: any[]) => Promise<any>>;
 }
-interface MockR2 {
+interface MockR2 { // Simplified
   get: Mock<(...args: any[]) => Promise<any>>;
   put: Mock<(...args: any[]) => Promise<any>>;
+  head?: Mock<(...args: any[]) => Promise<any>>;
+  delete?: Mock<(...args: any[]) => Promise<any>>;
+  list?: Mock<(...args: any[]) => Promise<any>>;
 }
 
-// Define a type for the mocked environment
-interface MockEnv {
+// Define the actual Env structure used by the worker
+// Use real types here
+interface WorkerEnv { 
+    INTERNAL_KEY_BINDING?: Fetcher; // Assuming it's a binding for a secret store
+    TG_BOT_TOKEN_BINDING: Fetcher; // Assuming binding for secret
+    TELEGRAM_SECRET_TOKEN?: string;
+    TG_CHAT_ID_BINDING?: Fetcher; // Assuming binding for secret
+    CONFIG_KV: KVNamespace;
+    AI: any; // Use any because @cloudflare/ai might not be installed
+    VECTORIZE_INDEX: VectorizeIndex;
+    UPLOADS_BUCKET: R2Bucket;
+    // Add other bindings if used
+}
+
+// Define a type for the mocked environment object we create in tests
+type MockEnvForTest = {
   INTERNAL_KEY_BINDING?: MockBinding<string>;
   TG_BOT_TOKEN_BINDING: MockBinding<string>;
   TELEGRAM_SECRET_TOKEN?: string;
@@ -31,7 +56,7 @@ interface MockEnv {
   AI: MockAI;
   VECTORIZE_INDEX: MockVectorize;
   UPLOADS_BUCKET: MockR2;
-}
+};
 
 // Mock environment setup function
 const createMockEnv = (secrets: {
@@ -39,265 +64,192 @@ const createMockEnv = (secrets: {
   botToken?: string | null;
   chatId?: string | null;
   webhookSecret?: string | null;
-}): MockEnv => ({
-  INTERNAL_KEY_BINDING: secrets.internalKey !== undefined 
-    ? { get: mock<() => Promise<string | null>>().mockResolvedValue(secrets.internalKey) } 
-    : undefined,
-  TG_BOT_TOKEN_BINDING: {
-    get: mock<() => Promise<string | null>>().mockResolvedValue(secrets.botToken),
-  },
-  TELEGRAM_SECRET_TOKEN: secrets.webhookSecret,
-  TG_CHAT_ID_BINDING: secrets.chatId !== undefined
-    ? { get: mock<() => Promise<string | null>>().mockResolvedValue(secrets.chatId) }
-    : undefined,
-  CONFIG_KV: {
-    get: mock().mockResolvedValue(null), // Default mock
-    put: mock().mockResolvedValue(undefined),
-  } as MockKV, // Cast to satisfy KV type
-  AI: {
-    run: mock(),
-  },
-  VECTORIZE_INDEX: {
-    insert: mock(),
-    query: mock(),
-  },
-  UPLOADS_BUCKET: {
-    get: mock(),
-    put: mock(),
-  },
-});
+}): MockEnvForTest => {
+  const createR2Mock = (): MockR2 => ({
+      get: mock(),
+      put: mock(),
+      head: mock(),
+      delete: mock(),
+      list: mock(),
+  });
+  
+  return {
+    INTERNAL_KEY_BINDING: secrets.internalKey !== undefined 
+      ? { get: mock<() => Promise<string | null>>().mockResolvedValue(secrets.internalKey) } 
+      : undefined,
+    TG_BOT_TOKEN_BINDING: {
+      get: mock<() => Promise<string | null>>().mockResolvedValue(secrets.botToken === undefined ? null : secrets.botToken),
+    },
+    TELEGRAM_SECRET_TOKEN: secrets.webhookSecret === null ? undefined : secrets.webhookSecret,
+    TG_CHAT_ID_BINDING: secrets.chatId !== undefined
+      ? { get: mock<() => Promise<string | null>>().mockResolvedValue(secrets.chatId) }
+      : undefined,
+    CONFIG_KV: {
+      get: mock().mockResolvedValue(null), 
+      put: mock().mockResolvedValue(undefined),
+      list: mock().mockResolvedValue({ keys: [] }), // Add basic list mock
+      delete: mock().mockResolvedValue(undefined), // Add basic delete mock
+    } as MockKV, 
+    AI: {
+      run: mock(),
+    },
+    VECTORIZE_INDEX: {
+      insert: mock(),
+      query: mock(),
+    } as unknown as VectorizeIndex, // Cast via unknown
+    UPLOADS_BUCKET: createR2Mock() as unknown as R2Bucket, // Cast via unknown
+  } as MockEnvForTest;
+};
 
-const PROCESS_ENDPOINT = "/process"; // Define the endpoint used in the worker
+const PROCESS_ENDPOINT = "/process";
 
 describe("Telegram Worker", () => {
   const TEST_INTERNAL_KEY = "test-internal-key";
   const TEST_BOT_TOKEN = "test-bot-token";
   const TEST_CHAT_ID = "default-chat-id";
-
-  let mockEnv: MockEnv; // Use the defined mock type
-  let fetchMock: ReturnType<typeof mock>; // Use Bun's mock type
-
-  const validNotification = {
-    message: "⚠️ BTC Hoox Signal: LONG at 50000",
-    chatId: 123456789, // Explicit chat ID in request
-  };
-
-  const validNotificationDefaultChat = {
-    message: "⚠️ ETH Hoox Signal: SHORT at 3000",
-    // No chatId, should use default from binding
-  };
+  let mockEnv: MockEnvForTest;
+  let fetchMock: ReturnType<typeof mock>; 
+  const validNotification = { message: "...", chatId: 123 };
+  const validNotificationDefaultChat = { message: "..." };
 
   beforeEach(() => {
-    mock.restore(); // Use Bun's restore
-    // Set up default valid environment
+    mock.restore(); 
     mockEnv = createMockEnv({
       internalKey: TEST_INTERNAL_KEY,
       botToken: TEST_BOT_TOKEN,
       chatId: TEST_CHAT_ID,
+      webhookSecret: undefined, 
     });
-
-    // Mock global fetch for Telegram API calls
     fetchMock = mock(global.fetch)
       .mockResolvedValue(
-        new Response(
-          JSON.stringify({ ok: true, result: { message_id: 123 } }),
-          { status: 200, headers: { "Content-Type": "application/json" } }
-        )
+        new Response(JSON.stringify({ ok: true, result: { message_id: 123 } }), { status: 200, headers: { "Content-Type": "application/json" } })
       );
-    global.fetch = fetchMock as unknown as typeof global.fetch; // Keep cast
+    global.fetch = fetchMock as unknown as typeof global.fetch; 
   });
 
   test("rejects request with invalid internal key", async () => {
-    mockEnv = createMockEnv({
-      botToken: TEST_BOT_TOKEN,
-      chatId: TEST_CHAT_ID,
-      internalKey: null,
-    }); // No internal key configured
-    const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, {
-      method: "POST",
-      headers: { "X-Internal-Key": "invalid-key" },
-      body: JSON.stringify({ payload: validNotification, internalAuthKey: "invalid-key", requestId: "test-req-1" }),
-    });
-
-    const response = await telegramWorker.fetch(request, mockEnv);
-    expect(response.status).toBe(500); // Config error
-    const responseData = await response.json() as { error: string };
-    expect(responseData.error).toContain("INTERNAL_KEY_BINDING secret not configured");
-    expect(fetchMock).not.toHaveBeenCalled(); // Telegram should not be called
-    expect(mockEnv.INTERNAL_KEY_BINDING.get).toHaveBeenCalledTimes(1);
-  });
+     mockEnv = createMockEnv({ botToken: TEST_BOT_TOKEN, chatId: TEST_CHAT_ID, internalKey: null, webhookSecret: undefined, }); 
+     const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, { method: "POST", headers: { "X-Internal-Key": "invalid-key" }, body: JSON.stringify({ payload: validNotification, internalAuthKey: "invalid-key", requestId: "test-req-1" }), });
+     const response = await telegramWorker.fetch(request, mockEnv as unknown as WorkerEnv);
+     expect(response.status).toBe(500);
+     const responseData = await response.json() as { error: string };
+     expect(responseData.error).toContain("INTERNAL_KEY_BINDING secret not configured"); 
+     expect(fetchMock).not.toHaveBeenCalled(); 
+     expect(mockEnv.INTERNAL_KEY_BINDING).toBeUndefined(); 
+   });
 
   test("rejects request if internalAuthKey doesn't match secret", async () => {
-    // mockEnv has TEST_INTERNAL_KEY
-    const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payload: validNotification, internalAuthKey: "wrong-key", requestId: "test-req-2" }),
-    });
-    const response = await telegramWorker.fetch(request, mockEnv);
-    expect(response.status).toBe(401); // Unauthorized
-    const responseData = await response.json() as { error: string };
-    expect(responseData.error).toContain("Authentication failed");
-    expect(fetchMock).not.toHaveBeenCalled();
-    expect(mockEnv.INTERNAL_KEY_BINDING.get).toHaveBeenCalledTimes(1);
-  });
-
-  test("sends telegram message with explicit chat ID", async () => {
-    const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payload: validNotification, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-1" }),
-    });
-
-    const response = await telegramWorker.fetch(request, mockEnv);
-    expect(response.status).toBe(200);
-    const responseData = await response.json() as { success: boolean };
-    expect(responseData.success).toBe(true);
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const fetchCallArgs = fetchMock.mock.calls[0];
-    expect(fetchCallArgs[0]).toContain(TEST_BOT_TOKEN); // URL includes bot token
-    const fetchBody = JSON.parse(fetchCallArgs[1].body);
-    expect(fetchBody.chat_id).toBe(validNotification.chatId); // Uses explicit chat ID
-    expect(fetchBody.text).toBe(validNotification.message);
-    expect(mockEnv.INTERNAL_KEY_BINDING.get).toHaveBeenCalledTimes(1);
-    expect(mockEnv.TG_BOT_TOKEN_BINDING.get).toHaveBeenCalledTimes(1);
-    expect(mockEnv.TG_CHAT_ID_BINDING.get).toHaveBeenCalledTimes(1); // Default chat ID is retrieved even if not used
-  });
-
-  test("sends telegram message with default chat ID from binding", async () => {
-    const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payload: validNotificationDefaultChat, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-2" }),
-    });
-
-    const response = await telegramWorker.fetch(request, mockEnv);
-    expect(response.status).toBe(200);
-    const responseData = await response.json() as { success: boolean };
-    expect(responseData.success).toBe(true);
-
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-    const fetchCallArgs = fetchMock.mock.calls[0];
-    const fetchBody = JSON.parse(fetchCallArgs[1].body);
-    expect(fetchBody.chat_id).toBe(TEST_CHAT_ID); // Uses default chat ID from env mock
-    expect(fetchBody.text).toBe(validNotificationDefaultChat.message);
-    expect(mockEnv.TG_CHAT_ID_BINDING.get).toHaveBeenCalledTimes(1);
-  });
-
-  test("returns error if default chat ID binding fails and no chat ID in request", async () => {
-    mockEnv = createMockEnv({
-      internalKey: TEST_INTERNAL_KEY,
-      botToken: TEST_BOT_TOKEN,
-      chatId: null,
-    }); // Default chat ID is null
-    const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payload: validNotificationDefaultChat, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-3" }),
-    });
-
-    const response = await telegramWorker.fetch(request, mockEnv);
-    expect(response.status).toBe(500);
-    const responseData = await response.json() as { error: string };
-    expect(responseData.error).toContain("Chat ID configuration error");
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  test("returns error if bot token binding fails", async () => {
-    mockEnv = createMockEnv({
-      internalKey: TEST_INTERNAL_KEY,
-      botToken: null,
-      chatId: TEST_CHAT_ID,
-    }); // Bot token is null
-    const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payload: validNotification, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-4" }),
-    });
-
-    const response = await telegramWorker.fetch(request, mockEnv);
-    expect(response.status).toBe(500);
-    const responseData = await response.json() as { error: string };
-    expect(responseData.error).toContain("Telegram bot token not configured");
-    expect(fetchMock).not.toHaveBeenCalled();
-  });
-
-  test("handles Telegram API fetch errors", async () => {
-    fetchMock.mockRejectedValue(new Error("Network Error")); // Simulate fetch failure
-
-    const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payload: validNotification, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-5" }),
-    });
-
-    const response = await telegramWorker.fetch(request, mockEnv);
-    expect(response.status).toBe(500);
-    const responseData = await response.json() as { error: string };
-    expect(responseData.error).toContain("Network Error");
-  });
-
-  test("handles non-200 response from Telegram API", async () => {
-    fetchMock.mockResolvedValue(
-      new Response(
-        JSON.stringify({ ok: false, description: "Chat not found" }),
-        { status: 404, headers: { "Content-Type": "application/json" } }
-      )
-    );
-
-    const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ payload: validNotification, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-6" }),
-    });
-
-    const response = await telegramWorker.fetch(request, mockEnv);
-    expect(response.status).toBe(500);
-    const responseData = await response.json() as { error: string };
-    expect(responseData.error).toContain("Telegram API request failed");
-    expect(responseData.error).toContain("(404)");
-    expect(responseData.error).toContain("Chat not found");
-  });
+     mockEnv = createMockEnv({ internalKey: TEST_INTERNAL_KEY, botToken: TEST_BOT_TOKEN, chatId: TEST_CHAT_ID, webhookSecret: undefined, });
+     const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload: validNotification, internalAuthKey: "wrong-key", requestId: "test-req-2" }), });
+     const response = await telegramWorker.fetch(request, mockEnv as unknown as WorkerEnv);
+     expect(response.status).toBe(401); 
+     const responseData = await response.json() as { error: string };
+     expect(responseData.error).toContain("Authentication failed");
+     expect(fetchMock).not.toHaveBeenCalled();
+     expect(mockEnv.INTERNAL_KEY_BINDING?.get).toHaveBeenCalledTimes(1);
+   });
+   
+   test("sends telegram message with explicit chat ID", async () => {
+     mockEnv = createMockEnv({ internalKey: TEST_INTERNAL_KEY, botToken: TEST_BOT_TOKEN, chatId: TEST_CHAT_ID, webhookSecret: undefined, });
+     const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload: validNotification, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-1" }), });
+     const response = await telegramWorker.fetch(request, mockEnv as unknown as WorkerEnv);
+     expect(response.status).toBe(200);
+     const responseData = await response.json() as { success: boolean };
+     expect(responseData.success).toBe(true);
+     expect(fetchMock).toHaveBeenCalledTimes(1);
+     const fetchCallArgs = fetchMock.mock.calls[0];
+     expect(fetchCallArgs[0]).toContain(TEST_BOT_TOKEN); 
+     const fetchBody = JSON.parse(fetchCallArgs[1].body);
+     expect(fetchBody.chat_id).toBe(validNotification.chatId); 
+     expect(fetchBody.text).toBe(validNotification.message);
+     expect(mockEnv.INTERNAL_KEY_BINDING?.get).toHaveBeenCalledTimes(1);
+     expect(mockEnv.TG_BOT_TOKEN_BINDING.get).toHaveBeenCalledTimes(1);
+     expect(mockEnv.TG_CHAT_ID_BINDING?.get).toHaveBeenCalledTimes(1); 
+   });
+   
+   test("sends telegram message with default chat ID from binding", async () => {
+     mockEnv = createMockEnv({ internalKey: TEST_INTERNAL_KEY, botToken: TEST_BOT_TOKEN, chatId: TEST_CHAT_ID, webhookSecret: undefined, });
+     const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload: validNotificationDefaultChat, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-2" }), });
+     const response = await telegramWorker.fetch(request, mockEnv as unknown as WorkerEnv);
+     expect(response.status).toBe(200);
+     const responseData = await response.json() as { success: boolean };
+     expect(responseData.success).toBe(true);
+     expect(fetchMock).toHaveBeenCalledTimes(1);
+     const fetchCallArgs = fetchMock.mock.calls[0];
+     const fetchBody = JSON.parse(fetchCallArgs[1].body);
+     expect(fetchBody.chat_id).toBe(TEST_CHAT_ID); 
+     expect(fetchBody.text).toBe(validNotificationDefaultChat.message);
+     expect(mockEnv.TG_CHAT_ID_BINDING?.get).toHaveBeenCalledTimes(1);
+   });
+   
+   test("returns error if default chat ID binding fails and no chat ID in request", async () => {
+     mockEnv = createMockEnv({ internalKey: TEST_INTERNAL_KEY, botToken: TEST_BOT_TOKEN, chatId: null, webhookSecret: undefined, }); 
+     const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload: validNotificationDefaultChat, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-3" }), });
+     const response = await telegramWorker.fetch(request, mockEnv as unknown as WorkerEnv);
+     expect(response.status).toBe(500);
+     const responseData = await response.json() as { error: string };
+     expect(responseData.error).toContain("Chat ID configuration error");
+     expect(fetchMock).not.toHaveBeenCalled();
+   });
+   
+   test("returns error if bot token binding fails", async () => {
+     mockEnv = createMockEnv({ internalKey: TEST_INTERNAL_KEY, botToken: null, chatId: TEST_CHAT_ID, webhookSecret: undefined, }); 
+     const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload: validNotification, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-4" }), });
+     const response = await telegramWorker.fetch(request, mockEnv as unknown as WorkerEnv);
+     expect(response.status).toBe(500);
+     const responseData = await response.json() as { error: string };
+     expect(responseData.error).toContain("Telegram bot token not configured");
+     expect(fetchMock).not.toHaveBeenCalled();
+   });
+   
+   test("handles Telegram API fetch errors", async () => {
+     mockEnv = createMockEnv({ internalKey: TEST_INTERNAL_KEY, botToken: TEST_BOT_TOKEN, chatId: TEST_CHAT_ID, webhookSecret: undefined, });
+     fetchMock.mockRejectedValue(new Error("Network Error")); 
+     const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload: validNotification, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-5" }), });
+     const response = await telegramWorker.fetch(request, mockEnv as unknown as WorkerEnv);
+     expect(response.status).toBe(500);
+     const responseData = await response.json() as { error: string };
+     expect(responseData.error).toContain("Network Error");
+   });
+   
+   test("handles non-200 response from Telegram API", async () => {
+     mockEnv = createMockEnv({ internalKey: TEST_INTERNAL_KEY, botToken: TEST_BOT_TOKEN, chatId: TEST_CHAT_ID, webhookSecret: undefined, });
+     fetchMock.mockResolvedValue( new Response( JSON.stringify({ ok: false, description: "Chat not found" }), { status: 404, headers: { "Content-Type": "application/json" } } ) );
+     const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload: validNotification, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-6" }), });
+     const response = await telegramWorker.fetch(request, mockEnv as unknown as WorkerEnv);
+     expect(response.status).toBe(500);
+     const responseData = await response.json() as { error: string };
+     expect(responseData.error).toContain("Telegram API request failed");
+     expect(responseData.error).toContain("(404)");
+     expect(responseData.error).toContain("Chat not found");
+   });
 });
 
-// --- Describe block for Helper Functions ---
 describe("Telegram Worker Helpers", () => {
-  let mockEnv: MockEnv; // Use mock type
-  const TEST_BOT_TOKEN = "test-bot-token"; // Needed for some helpers potentially
+  let mockEnv: MockEnvForTest;
+  const TEST_BOT_TOKEN = "test-bot-token";
   const TEST_CHAT_ID = "default-chat-id";
-
-  // Reset mocks specific to these tests
   const mockAiRun = mock();
   const mockVectorizeInsert = mock();
   const mockVectorizeQuery = mock();
   const mockR2Get = mock();
 
   beforeEach(() => {
-    mock.restore(); // Use Bun's restore
-    mockEnv = createMockEnv({
-      botToken: TEST_BOT_TOKEN, // Include necessary base secrets
-      chatId: TEST_CHAT_ID,
-    });
-    // Assign specific mocks from the test suite
-    mockEnv.AI.run = mockAiRun;
-    mockEnv.VECTORIZE_INDEX.insert = mockVectorizeInsert;
-    mockEnv.VECTORIZE_INDEX.query = mockVectorizeQuery;
-    mockEnv.UPLOADS_BUCKET.get = mockR2Get;
+     mock.restore();
+     mockEnv = createMockEnv({ botToken: TEST_BOT_TOKEN, chatId: TEST_CHAT_ID, internalKey: undefined, webhookSecret: undefined, });
+     mockEnv.AI.run = mockAiRun;
+     mockEnv.VECTORIZE_INDEX.insert = mockVectorizeInsert;
+     mockEnv.VECTORIZE_INDEX.query = mockVectorizeQuery;
+     mockEnv.UPLOADS_BUCKET.get = mockR2Get;
+     global.fetch = mock() as unknown as typeof global.fetch; 
+   });
 
-    // Mock fetch for sendTelegramReply if needed (not directly tested here yet)
-    global.fetch = mock() as unknown as typeof global.fetch; // Use mock() and cast
-  });
-
-  // Dynamically import the functions to test after mocks are set up
-  // Update function signatures to use MockEnv
-  let generateEmbeddingsFn: (text: string | string[], env: MockEnv) => Promise<number[][]>;
-  let insertEmbeddingsFn: (vectors: number[][], metadata: any[], env: MockEnv) => Promise<void>;
-  let queryEmbeddingsFn: (queryText: string, env: MockEnv, topK?: number) => Promise<any>;
-  let handleGetLatestTradeSignalR2Fn: (env: MockEnv) => Promise<any | null>;
+  let generateEmbeddingsFn: (text: string | string[], env: WorkerEnv) => Promise<number[][]>;
+  let insertEmbeddingsFn: (vectors: number[][], metadata: any[], env: WorkerEnv) => Promise<void>; 
+  let queryEmbeddingsFn: (queryText: string, env: WorkerEnv, topK?: number) => Promise<any>; 
+  let handleGetLatestTradeSignalR2Fn: (env: WorkerEnv) => Promise<any | null>;
 
   beforeAll(async () => {
-    // Import the specific functions needed
     const module = await import("../src/index.js");
     generateEmbeddingsFn = module.generateEmbeddings;
     insertEmbeddingsFn = module.insertEmbeddings;
@@ -305,311 +257,202 @@ describe("Telegram Worker Helpers", () => {
     handleGetLatestTradeSignalR2Fn = module.handleGetLatestTradeSignalR2;
   });
 
-  // --- generateEmbeddings Tests ---
   describe("generateEmbeddings", () => {
     test("should call AI binding and return embeddings", async () => {
-      const inputText = "Test message";
-      const mockEmbedding = [[0.1, 0.2, 0.3]];
-      mockAiRun.mockResolvedValue({ data: mockEmbedding });
-
-      const result = await generateEmbeddingsFn(inputText, mockEnv);
-
-      expect(result).toEqual(mockEmbedding);
-      expect(mockAiRun).toHaveBeenCalledWith("@cf/baai/bge-base-en-v1.5", { text: inputText });
+       const inputText = "Test message";
+       const mockEmbedding = [[0.1, 0.2, 0.3]];
+       mockAiRun.mockResolvedValue({ data: mockEmbedding });
+       const result = await generateEmbeddingsFn(inputText, mockEnv as unknown as WorkerEnv);
+       expect(result).toEqual(mockEmbedding);
+       expect(mockAiRun).toHaveBeenCalledWith("@cf/baai/bge-base-en-v1.5", { text: inputText });
     });
-
-    test("should throw error if AI binding is missing", async () => {
-      const envWithoutAI = { ...mockEnv, AI: undefined } as unknown as MockEnv; // Need cast
+     test("should throw error if AI binding is missing", async () => {
+      const envWithoutAI = { ...mockEnv, AI: undefined } as unknown as WorkerEnv;
       await expect(generateEmbeddingsFn("Test", envWithoutAI)).rejects.toThrow("AI service not available.");
     });
-
-    test("should throw error if AI run fails", async () => {
-      const error = new Error("AI API Error");
-      mockAiRun.mockRejectedValue(error);
-      await expect(generateEmbeddingsFn("Test", mockEnv)).rejects.toThrow(`Failed to generate embeddings: ${error.message}`);
-    });
-
+     test("should throw error if AI run fails", async () => {
+       const error = new Error("AI API Error");
+       mockAiRun.mockRejectedValue(error);
+       await expect(generateEmbeddingsFn("Test", mockEnv as unknown as WorkerEnv)).rejects.toThrow(`Failed to generate embeddings: ${error.message}`);
+     });
      test("should throw error if AI response format is invalid", async () => {
-      mockAiRun.mockResolvedValue({ invalid: "structure" }); // No 'data' field
-      await expect(generateEmbeddingsFn("Test", mockEnv)).rejects.toThrow("Failed to parse embeddings from AI response.");
-    });
+       mockAiRun.mockResolvedValue({ invalid: "structure" }); 
+       await expect(generateEmbeddingsFn("Test", mockEnv as unknown as WorkerEnv)).rejects.toThrow("Failed to parse embeddings from AI response.");
+     });
   });
 
-  // --- insertEmbeddings Tests ---
   describe("insertEmbeddings", () => {
-    const vectors = [[0.1], [0.2]];
-    const metadata = [{ messageId: "m1", text: "t1" }, { messageId: "m2", text: "t2" }];
-
-    test("should call Vectorize index insert with correct data", async () => {
-      mockVectorizeInsert.mockResolvedValue({ success: true, count: 2 });
-      await insertEmbeddingsFn(vectors, metadata, mockEnv);
-
-      expect(mockVectorizeInsert).toHaveBeenCalledTimes(1);
-      expect(mockVectorizeInsert).toHaveBeenCalledWith([
-        { id: "m1", values: [0.1], metadata: metadata[0] },
-        { id: "m2", values: [0.2], metadata: metadata[1] },
-      ]);
-    });
-
-    test("should throw error if Vectorize binding is missing", async () => {
-      const envWithoutVec = { ...mockEnv, VECTORIZE_INDEX: undefined } as unknown as MockEnv;
-      await expect(insertEmbeddingsFn(vectors, metadata, envWithoutVec)).rejects.toThrow("Vectorize service not available.");
-    });
-
-    test("should throw error if vector and metadata counts mismatch", async () => {
-      await expect(insertEmbeddingsFn(vectors, [metadata[0]], mockEnv)).rejects.toThrow("Number of vectors must match number of metadata objects.");
-    });
-
-    test("should handle Vectorize insert error", async () => {
-      const error = new Error("Vectorize Insert Failed");
-      mockVectorizeInsert.mockRejectedValue(error);
-      await expect(insertEmbeddingsFn(vectors, metadata, mockEnv)).rejects.toThrow(`Failed to insert embeddings: ${error.message}`);
-    });
-
-     test("should do nothing if vectors array is empty", async () => {
-       await insertEmbeddingsFn([], [], mockEnv);
-       expect(mockVectorizeInsert).not.toHaveBeenCalled();
-     });
+      const vectors = [[0.1], [0.2]];
+      const metadata = [{ messageId: "m1", text: "t1" }, { messageId: "m2", text: "t2" }];
+      test("should call Vectorize index insert with correct data", async () => {
+         mockVectorizeInsert.mockResolvedValue({ success: true, count: 2 });
+         await insertEmbeddingsFn(vectors, metadata, mockEnv as unknown as WorkerEnv);
+         expect(mockVectorizeInsert).toHaveBeenCalledTimes(1);
+         expect(mockVectorizeInsert).toHaveBeenCalledWith([{ id: "m1", values: [0.1], metadata: metadata[0] }, { id: "m2", values: [0.2], metadata: metadata[1] }, ]);
+      });
+       test("should throw error if Vectorize binding is missing", async () => {
+         const envWithoutVec = { ...mockEnv, VECTORIZE_INDEX: undefined } as unknown as WorkerEnv;
+         await expect(insertEmbeddingsFn(vectors, metadata, envWithoutVec)).rejects.toThrow("Vectorize service not available.");
+       });
+      test("should throw error if vector and metadata counts mismatch", async () => {
+         await expect(insertEmbeddingsFn(vectors, [metadata[0]], mockEnv as unknown as WorkerEnv)).rejects.toThrow("Number of vectors must match number of metadata objects.");
+       });
+      test("should handle Vectorize insert error", async () => {
+         const error = new Error("Vectorize Insert Failed");
+         mockVectorizeInsert.mockRejectedValue(error);
+         await expect(insertEmbeddingsFn(vectors, metadata, mockEnv as unknown as WorkerEnv)).rejects.toThrow(`Failed to insert embeddings: ${error.message}`);
+       });
+       test("should do nothing if vectors array is empty", async () => {
+         await insertEmbeddingsFn([], [], mockEnv as unknown as WorkerEnv);
+         expect(mockVectorizeInsert).not.toHaveBeenCalled();
+       });
   });
 
-  // --- queryEmbeddings Tests ---
-  describe("queryEmbeddings", () => {
-    const queryText = "Search query";
-    const queryEmbedding = [[0.5, 0.6]];
-    const mockMatches = { matches: [{ id: "m1", score: 0.9, metadata: {} }] };
-
-    beforeEach(() => {
-        // Mock AI run for query embedding generation
-        mockAiRun.mockResolvedValue({ data: queryEmbedding });
-        // Mock Vectorize query
-        mockVectorizeQuery.mockResolvedValue(mockMatches);
-    });
-
-    test("should generate query embedding and call Vectorize query", async () => {
-      const result = await queryEmbeddingsFn(queryText, mockEnv, 5);
-
-      expect(result).toEqual(mockMatches);
-      expect(mockAiRun).toHaveBeenCalledWith("@cf/baai/bge-base-en-v1.5", { text: queryText });
-      expect(mockVectorizeQuery).toHaveBeenCalledWith(queryEmbedding[0], { topK: 5, returnMetadata: true });
-    });
-
-    test("should use default topK if not provided", async () => {
-      await queryEmbeddingsFn(queryText, mockEnv);
-      expect(mockVectorizeQuery).toHaveBeenCalledWith(queryEmbedding[0], { topK: 3, returnMetadata: true }); // Default is 3
-    });
-
-    test("should throw if AI binding is missing", async () => {
-        const envWithoutAI = { ...mockEnv, AI: undefined } as unknown as MockEnv;
-        await expect(queryEmbeddingsFn(queryText, envWithoutAI)).rejects.toThrow("AI service not available for query embedding.");
-    });
-
-    test("should throw if Vectorize binding is missing", async () => {
-        const envWithoutVec = { ...mockEnv, VECTORIZE_INDEX: undefined } as unknown as MockEnv;
-        await expect(queryEmbeddingsFn(queryText, envWithoutVec)).rejects.toThrow("Vectorize service not available.");
-    });
-
-     test("should throw if query embedding generation fails", async () => {
-        const aiError = new Error("AI Fail");
-        mockAiRun.mockRejectedValue(aiError);
-        await expect(queryEmbeddingsFn(queryText, mockEnv)).rejects.toThrow(`Failed to query embeddings: Failed to generate embeddings: ${aiError.message}`);
-        expect(mockVectorizeQuery).not.toHaveBeenCalled();
-     });
-
-     test("should throw if Vectorize query fails", async () => {
-        const vectorizeError = new Error("Vectorize Fail");
-        mockVectorizeQuery.mockRejectedValue(vectorizeError);
-        await expect(queryEmbeddingsFn(queryText, mockEnv)).rejects.toThrow(`Failed to query embeddings: ${vectorizeError.message}`);
-     });
-  });
-
-  // --- handleGetLatestTradeSignalR2 Tests ---
-  describe("handleGetLatestTradeSignalR2", () => {
-    test("should get object from R2 bucket", async () => {
-      const mockR2Object = { body: "latest signal data", writeHttpMetadata: mock() }; // Correct mock
-      mockR2Get.mockResolvedValue(mockR2Object);
-
-      const result = await handleGetLatestTradeSignalR2Fn(mockEnv);
-
-      expect(result).toBe(mockR2Object);
-      expect(mockR2Get).toHaveBeenCalledWith("latest_trade_signal.json");
-    });
-
-    test("should return null if R2 binding is missing", async () => {
-      const envWithoutR2 = { ...mockEnv, UPLOADS_BUCKET: undefined } as unknown as MockEnv;
-      const result = await handleGetLatestTradeSignalR2Fn(envWithoutR2);
-      expect(result).toBeNull();
-      expect(mockR2Get).not.toHaveBeenCalled();
-    });
-
-    test("should return null if object not found in R2", async () => {
-      mockR2Get.mockResolvedValue(null);
-      const result = await handleGetLatestTradeSignalR2Fn(mockEnv);
-      expect(result).toBeNull();
-      expect(mockR2Get).toHaveBeenCalledWith("latest_trade_signal.json");
-    });
-
-    test("should throw error if R2 get fails", async () => {
-      const error = new Error("R2 Get Failed");
-      mockR2Get.mockRejectedValue(error);
-      await expect(handleGetLatestTradeSignalR2Fn(mockEnv)).rejects.toThrow(`Failed to get latest signal from R2: ${error.message}`);
-    });
-  });
+   describe("queryEmbeddings", () => {
+       const queryText = "Search query";
+       const queryEmbedding = [[0.5, 0.6]];
+       const mockMatches = { matches: [{ id: "m1", score: 0.9, metadata: {} }] };
+       beforeEach(() => {
+         mockAiRun.mockResolvedValue({ data: queryEmbedding });
+         mockVectorizeQuery.mockResolvedValue(mockMatches);
+       });
+       test("should generate query embedding and call Vectorize query", async () => {
+         const result = await queryEmbeddingsFn(queryText, mockEnv as unknown as WorkerEnv, 5);
+         expect(result).toEqual(mockMatches);
+         expect(mockAiRun).toHaveBeenCalledWith("@cf/baai/bge-base-en-v1.5", { text: queryText });
+         expect(mockVectorizeQuery).toHaveBeenCalledWith(queryEmbedding[0], { topK: 5, returnMetadata: true });
+       });
+       test("should use default topK if not provided", async () => {
+         await queryEmbeddingsFn(queryText, mockEnv as unknown as WorkerEnv);
+         expect(mockVectorizeQuery).toHaveBeenCalledWith(queryEmbedding[0], { topK: 3, returnMetadata: true }); 
+       });
+       test("should throw if AI binding is missing", async () => {
+         const envWithoutAI = { ...mockEnv, AI: undefined } as unknown as WorkerEnv;
+         await expect(queryEmbeddingsFn(queryText, envWithoutAI)).rejects.toThrow("AI service not available for query embedding.");
+       });
+       test("should throw if Vectorize binding is missing", async () => {
+         const envWithoutVec = { ...mockEnv, VECTORIZE_INDEX: undefined } as unknown as WorkerEnv;
+         await expect(queryEmbeddingsFn(queryText, envWithoutVec)).rejects.toThrow("Vectorize service not available.");
+       });
+       test("should throw if query embedding generation fails", async () => {
+         const aiError = new Error("AI Fail");
+         mockAiRun.mockRejectedValue(aiError);
+         await expect(queryEmbeddingsFn(queryText, mockEnv as unknown as WorkerEnv)).rejects.toThrow(`Failed to query embeddings: Failed to generate embeddings: ${aiError.message}`);
+         expect(mockVectorizeQuery).not.toHaveBeenCalled();
+       });
+       test("should throw if Vectorize query fails", async () => {
+         const vectorizeError = new Error("Vectorize Fail");
+         mockVectorizeQuery.mockRejectedValue(vectorizeError);
+         await expect(queryEmbeddingsFn(queryText, mockEnv as unknown as WorkerEnv)).rejects.toThrow(`Failed to query embeddings: ${vectorizeError.message}`);
+       });
+   });
+   
+   describe("handleGetLatestTradeSignalR2", () => {
+       test("should get object from R2 bucket", async () => {
+         const mockR2Object = { body: "latest signal data", writeHttpMetadata: mock() }; 
+         mockR2Get.mockResolvedValue(mockR2Object);
+         const result = await handleGetLatestTradeSignalR2Fn(mockEnv as unknown as WorkerEnv);
+         expect(result).toBe(mockR2Object);
+         expect(mockR2Get).toHaveBeenCalledWith("latest_trade_signal.json");
+       });
+        test("should return null if R2 binding is missing", async () => {
+          const envWithoutR2 = { ...mockEnv, UPLOADS_BUCKET: undefined } as unknown as WorkerEnv;
+          const result = await handleGetLatestTradeSignalR2Fn(envWithoutR2);
+           expect(result).toBeNull();
+           expect(mockR2Get).not.toHaveBeenCalled();
+       });
+       test("should return null if object not found in R2", async () => {
+         mockR2Get.mockResolvedValue(null);
+         const result = await handleGetLatestTradeSignalR2Fn(mockEnv as unknown as WorkerEnv);
+         expect(result).toBeNull();
+         expect(mockR2Get).toHaveBeenCalledWith("latest_trade_signal.json");
+       });
+       test("should throw error if R2 get fails", async () => {
+         const error = new Error("R2 Get Failed");
+         mockR2Get.mockRejectedValue(error);
+         await expect(handleGetLatestTradeSignalR2Fn(mockEnv as unknown as WorkerEnv)).rejects.toThrow(`Failed to get latest signal from R2: ${error.message}`);
+       });
+   });
 });
 
-// --- Describe block for Webhook Handler ---
 describe("Telegram Worker Webhook Handler (/webhook)", () => {
-  let mockEnv: MockEnv; // Use mock type
+  let mockEnv: MockEnvForTest;
   const TEST_BOT_TOKEN = "test-bot-token";
   const TEST_CHAT_ID = "default-chat-id";
   const WEBHOOK_SECRET = "test-webhook-secret";
   const WEBHOOK_ENDPOINT = "/webhook";
-
-  // Mocks specific to webhook tests
   const mockAiRun = mock();
   const mockVectorizeInsert = mock();
   const mockVectorizeQuery = mock();
   const mockR2Get = mock();
-  const mockFetch = mock(); // Mock global fetch for sendTelegramReply
+  const mockFetch = mock();
 
-  beforeEach(() => {
-    mock.restore(); // Use Bun's restore
-    mockEnv = createMockEnv({
-      botToken: TEST_BOT_TOKEN,
-      chatId: TEST_CHAT_ID,
-      webhookSecret: WEBHOOK_SECRET,
-    });
-    // Assign specific mocks
-    mockEnv.AI.run = mockAiRun;
-    mockEnv.VECTORIZE_INDEX.insert = mockVectorizeInsert;
-    mockEnv.VECTORIZE_INDEX.query = mockVectorizeQuery;
-    mockEnv.UPLOADS_BUCKET.get = mockR2Get;
-    global.fetch = mockFetch as unknown as typeof global.fetch; // Keep cast
-
-    // Default successful mocks
-    mockAiRun.mockResolvedValue({ data: [[0.1]] }); // Mock embedding generation
-    mockVectorizeInsert.mockResolvedValue({ success: true, count: 1 }); // Mock vectorize insert
-    mockFetch.mockResolvedValue(new Response(JSON.stringify({ ok: true, result: { message_id: 456 } }), { status: 200 })); // Mock successful Telegram reply
-    mockR2Get.mockResolvedValue(null); // Default: no R2 object found
-
-  });
+   beforeEach(() => {
+     mock.restore();
+     mockEnv = createMockEnv({ botToken: TEST_BOT_TOKEN, chatId: TEST_CHAT_ID, webhookSecret: WEBHOOK_SECRET, internalKey: undefined, });
+     mockEnv.AI.run = mockAiRun;
+     mockEnv.VECTORIZE_INDEX.insert = mockVectorizeInsert;
+     mockEnv.VECTORIZE_INDEX.query = mockVectorizeQuery;
+     mockEnv.UPLOADS_BUCKET.get = mockR2Get;
+     global.fetch = mockFetch as unknown as typeof global.fetch; 
+     mockAiRun.mockResolvedValue({ data: [[0.1]] });
+     mockVectorizeInsert.mockResolvedValue({ success: true, count: 1 }); 
+     mockFetch.mockResolvedValue(new Response(JSON.stringify({ ok: true, result: { message_id: 456 } }), { status: 200 })); 
+     mockR2Get.mockResolvedValue(null); 
+   });
 
   afterEach(() => {
-    // Restore mocks after each test
     mock.restore();
   });
 
-  // --- Webhook Secret Validation Tests ---
   test("should reject request if webhook secret is missing in header", async () => {
-    const request = new Request(`https://telegram-worker.workers.dev${WEBHOOK_ENDPOINT}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" }, // Missing X-Telegram-Bot-Api-Secret-Token
-      body: JSON.stringify({ update_id: 1, message: { text: "hi" } }),
-    });
-
-    const response = await telegramWorker.fetch(request, mockEnv);
+    const request = new Request(`https://telegram-worker.workers.dev${WEBHOOK_ENDPOINT}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ update_id: 1, message: { text: "hi" } }), });
+    const response = await telegramWorker.fetch(request, mockEnv as unknown as WorkerEnv);
     expect(response.status).toBe(401);
     const body = await response.text();
     expect(body).toBe("Unauthorized");
   });
 
   test("should reject request if webhook secret in header is incorrect", async () => {
-    const request = new Request(`https://telegram-worker.workers.dev${WEBHOOK_ENDPOINT}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Telegram-Bot-Api-Secret-Token": "wrong-secret",
-      },
-      body: JSON.stringify({ update_id: 1, message: { text: "hi" } }),
-    });
+    const request = new Request(`https://telegram-worker.workers.dev${WEBHOOK_ENDPOINT}`, { method: "POST", headers: { "Content-Type": "application/json", "X-Telegram-Bot-Api-Secret-Token": "wrong-secret", }, body: JSON.stringify({ update_id: 1, message: { text: "hi" } }), });
+    const response = await telegramWorker.fetch(request, mockEnv as unknown as WorkerEnv);
+     expect(response.status).toBe(401);
+     const body = await response.text();
+     expect(body).toBe("Unauthorized");
+  });
 
-    const response = await telegramWorker.fetch(request, mockEnv);
+  test("should reject request if webhook secret is not configured in env", async () => {
+    mockEnv = createMockEnv({ botToken: TEST_BOT_TOKEN, chatId: TEST_CHAT_ID, internalKey: undefined, webhookSecret: undefined, });
+    const request = new Request(`https://telegram-worker.workers.dev${WEBHOOK_ENDPOINT}`, { method: "POST", headers: { "Content-Type": "application/json", "X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET, }, body: JSON.stringify({ update_id: 1, message: { text: "hi" } }), });
+    const response = await telegramWorker.fetch(request, mockEnv as unknown as WorkerEnv);
     expect(response.status).toBe(401);
     const body = await response.text();
     expect(body).toBe("Unauthorized");
   });
-
-    test("should reject request if webhook secret is not configured in env", async () => {
-    mockEnv = createMockEnv({ // Create env without the secret
-        botToken: TEST_BOT_TOKEN,
-        chatId: TEST_CHAT_ID,
-    });
-    const request = new Request(`https://telegram-worker.workers.dev${WEBHOOK_ENDPOINT}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET, // Header is present
-      },
-      body: JSON.stringify({ update_id: 1, message: { text: "hi" } }),
-    });
-
-    const response = await telegramWorker.fetch(request, mockEnv);
-    expect(response.status).toBe(401); // Still unauthorized as env var is missing
-    const body = await response.text();
-    expect(body).toBe("Unauthorized");
-  });
-
-  // --- Basic Message Handling Test ---
+  
   test("should process valid text message, generate/insert embeddings, and reply", async () => {
-    const messageText = "This is a test message";
-    const chatId = 987654321;
-    const messageId = 555;
-    const date = Math.floor(Date.now() / 1000);
-    const webhookBody = {
-      update_id: 12345,
-      message: {
-        message_id: messageId,
-        chat: { id: chatId, type: "private" },
-        date: date,
-        text: messageText,
-        from: { id: 111, is_bot: false, first_name: "Test" },
-      },
-    };
-
-    const request = new Request(`https://telegram-worker.workers.dev${WEBHOOK_ENDPOINT}`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET,
-      },
-      body: JSON.stringify(webhookBody),
-    });
-
-    const response = await telegramWorker.fetch(request, mockEnv);
-    expect(response.status).toBe(200); // Should return OK immediately
-
-    // Use timers to allow async operations (embedding, reply) to be called
-    await new Promise(resolve => setTimeout(resolve, 0));
-
-    // 1. Check embedding generation
-    expect(mockAiRun).toHaveBeenCalledTimes(1);
-    expect(mockAiRun).toHaveBeenCalledWith("@cf/baai/bge-base-en-v1.5", { text: [messageText] }); // Expect array
-
-    // 2. Check Vectorize insertion
-    expect(mockVectorizeInsert).toHaveBeenCalledTimes(1);
-    const insertArgs = mockVectorizeInsert.mock.calls[0][0];
-    expect(insertArgs).toHaveLength(1);
-    expect(insertArgs[0].id).toBe(String(messageId));
-    expect(insertArgs[0].values).toEqual([0.1]); // From mockAiRun
-    expect(insertArgs[0].metadata).toEqual(expect.objectContaining({
-        messageId: String(messageId),
-        chatId: String(chatId),
-        text: messageText,
-        timestamp: expect.any(String), // Check it's a string (ISO format)
-    }));
-
-    // 3. Check Telegram reply (sendTelegramReply uses global fetch)
-    expect(mockFetch).toHaveBeenCalledTimes(1);
-    const fetchCallArgs = mockFetch.mock.calls[0];
-    expect(fetchCallArgs[0]).toContain(`https://api.telegram.org/bot${TEST_BOT_TOKEN}/sendMessage`);
-    const fetchBody = JSON.parse(fetchCallArgs[1].body);
-    expect(fetchBody.chat_id).toBe(chatId);
-    expect(fetchBody.text).toContain("Received your message"); // Basic reply check
+      const messageText = "This is a test message";
+      const chatId = 987654321;
+      const messageId = 555;
+      const date = Math.floor(Date.now() / 1000);
+      const webhookBody = { update_id: 12345, message: { message_id: messageId, chat: { id: chatId, type: "private" }, date: date, text: messageText, from: { id: 111, is_bot: false, first_name: "Test" }, }, };
+      const request = new Request(`https://telegram-worker.workers.dev${WEBHOOK_ENDPOINT}`, { method: "POST", headers: { "Content-Type": "application/json", "X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET, }, body: JSON.stringify(webhookBody), });
+      const response = await telegramWorker.fetch(request, mockEnv as unknown as WorkerEnv);
+      expect(response.status).toBe(200); 
+      await new Promise(resolve => setTimeout(resolve, 0));
+      expect(mockAiRun).toHaveBeenCalledTimes(1);
+      expect(mockAiRun).toHaveBeenCalledWith("@cf/baai/bge-base-en-v1.5", { text: [messageText] }); 
+      expect(mockVectorizeInsert).toHaveBeenCalledTimes(1);
+      const insertArgs = mockVectorizeInsert.mock.calls[0][0];
+      expect(insertArgs).toHaveLength(1);
+      expect(insertArgs[0].id).toBe(String(messageId));
+      expect(insertArgs[0].values).toEqual([0.1]); 
+      expect(insertArgs[0].metadata).toEqual(expect.objectContaining({ messageId: String(messageId), chatId: String(chatId), text: messageText, timestamp: expect.any(String), }));
+      expect(mockFetch).toHaveBeenCalledTimes(1);
+      const fetchCallArgs = mockFetch.mock.calls[0];
+      expect(fetchCallArgs[0]).toContain(`https://api.telegram.org/bot${TEST_BOT_TOKEN}/sendMessage`);
+      const fetchBody = JSON.parse(fetchCallArgs[1].body);
+      expect(fetchBody.chat_id).toBe(chatId);
+      expect(fetchBody.text).toContain("Received your message"); 
   });
-
-  // TODO: Add more webhook tests:
-  // - Handling /latest_trade command (mock R2 get with data)
-  // - Handling messages triggering Vectorize search (mock queryEmbeddings)
-  // - Handling non-text messages or updates (e.g., photos, callbacks)
-  // - Error handling if AI/Vectorize/R2/Telegram Reply fails within the webhook
-
 });
