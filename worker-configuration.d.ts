@@ -11,7 +11,7 @@ declare namespace Cloudflare {
 		TELEGRAM_BOT_TOKEN: string;
 		TELEGRAM_CHAT_ID: string;
 		UPLOADS_BUCKET: R2Bucket;
-		TRADE_API: Fetcher;
+		TRADE_SERVICE: Fetcher;
 		WEBHOOK_RECEIVER_API: Fetcher;
 		VECTORIZE_INDEX: VectorizeIndex;
 		AI: Ai;

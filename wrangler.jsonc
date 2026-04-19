@@ -46,7 +46,7 @@
     "binding": "AI"
   },
   "services": [
-    { "binding": "TRADE_API", "service": "trade-worker" },
-    { "binding": "WEBHOOK_RECEIVER_API", "service": "webhook-receiver" }
+    { "binding": "TRADE_SERVICE", "service": "trade-worker" },
+    { "binding": "WEBHOOK_RECEIVER_API", "service": "hoox" }
   ]
 } 
