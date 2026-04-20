@@ -2,11 +2,11 @@
 
 **Last Updated:** April 2026
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) [![Runtime](https://img.shields.io/badge/Runtime-Bun-black?logo=bun)](https://bun.sh) [![Platform](https://img.shields.io/badge/Platform-Cloudflare%20Edge%20Workers-orange?logo=cloudflare)](https://workers.cloudflare.com/) [![License](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/) [![Build Status](https://img.shields.io/badge/Build-TODO-lightgrey?style=for-the-badge)](https://github.com/jango-blockchained/hoox-cf-edge-worker/actions) <!-- TODO: Update Build Status link -->
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) [![Runtime](https://img.shields.io/badge/Runtime-Bun-black?logo=bun)](https://bun.sh) [![Platform](https://img.shields.io/badge/Platform-Cloudflare®%20Edge%20Workers-orange?logo=cloudflare)](https://workers.cloudflare.com/) [![License](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/) [![Build Status](https://img.shields.io/badge/Build-TODO-lightgrey?style=for-the-badge)](https://github.com/jango-blockchained/hoox-setup/actions) 
 
-**[Main Repository](https://github.com/jango-blockchained/hoox-cf-edge-worker)** <!-- TODO: Update Main Repo link -->
+**[Main Repository](https://github.com/jango-blockchained/hoox-setup)** 
 
-A Cloudflare Worker service that handles interactions with the Telegram Bot API. It can send messages, process incoming commands (via webhook or polling), and potentially leverage other Cloudflare services like R2, AI, and Vectorize.
+A Cloudflare® Worker service that handles interactions with the Telegram Bot API. It can send messages, process incoming commands (via webhook or polling), and potentially leverage other Cloudflare® services like R2, AI, and Vectorize.
 
 ## Features
 
@@ -25,7 +25,7 @@ A Cloudflare Worker service that handles interactions with the Telegram Bot API.
 - Node.js >= 16
 - Bun
 - Wrangler CLI
-- Cloudflare Workers account
+- Cloudflare® Workers account
 - Telegram Bot Token (obtained from @BotFather).
 
 ## Setup
@@ -34,8 +34,8 @@ A Cloudflare Worker service that handles interactions with the Telegram Bot API.
     ```bash
     bun install
     ```
-2.  Set your Cloudflare account ID in `wrangler.jsonc`.
-3.  Configure Secrets (via Cloudflare dashboard Secrets Store or `wrangler secret put`):
+2.  Set your Cloudflare® account ID in `wrangler.jsonc`.
+3.  Configure Secrets (via Cloudflare® dashboard Secrets Store or `wrangler secret put`):
     - `INTERNAL_KEY_BINDING`: The **shared** secret key used for authentication with other internal workers.
     - `TELEGRAM_BOT_TOKEN`: Your Telegram Bot Token.
     - `TELEGRAM_CHAT_ID_DEFAULT`: The default Telegram Chat ID for outbound messages if none is specified.
@@ -174,4 +174,9 @@ The worker typically defaults to sending messages with `parse_mode` set to `HTML
 
 - Internal requests to `/process` _must_ include a valid `internalAuthKey`.
 - Incoming Telegram webhooks are authenticated using the secret path segment (`TELEGRAM_WEBHOOK_SECRET`).
-- The Telegram Bot Token and other secrets are stored securely using Cloudflare Workers Secrets.
+- The Telegram Bot Token and other secrets are stored securely using Cloudflare® Workers Secrets.
+
+
+---
+
+*Cloudflare® and the Cloudflare logo are trademarks and/or registered trademarks of Cloudflare, Inc. in the United States and other jurisdictions.*
