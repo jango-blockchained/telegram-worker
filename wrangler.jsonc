@@ -17,11 +17,6 @@
     "TG_CHAT_ID_BINDING": null,
     "TELEGRAM_SECRET_TOKEN": null
   },
-  "secrets": [
-    "TG_BOT_TOKEN_BINDING",
-    "TG_CHAT_ID_BINDING",
-    "TELEGRAM_SECRET_TOKEN"
-  ],
   // Note: Removed secrets_store_secrets definition. Secrets are now declared in vars and expected via `wrangler secret put`.
   "kv_namespaces": [
     {
