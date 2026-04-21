@@ -20,6 +20,7 @@ interface Env extends EnvWithKV {
   TG_CHAT_ID_BINDING?: SecretBinding;   // Optional default chat ID
   AI: Ai; // Add the AI binding
   VECTORIZE_INDEX: VectorizeIndex; // Add the Vectorize binding
+  ENABLE_DEBUG_ENDPOINTS?: string; // Set to "true" to enable test endpoints
 
   // Add other bindings/vars if needed
 }
@@ -61,13 +62,16 @@ const WEBHOOK_ENDPOINT = "/webhook"; // New endpoint for service bindings
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
+    const debugEndpointsEnabled = env.ENABLE_DEBUG_ENDPOINTS === "true";
 
     // Call the shared KV logging function (Consider moving this inside specific handlers if needed)
     // await logKvTimestamp(env); // Moved to only run on POST for now
 
     // --- Add temporary GET endpoint for testing Vectorize ---
     if (request.method === "GET" && url.pathname === "/test-vectorize") {
-      // Ensure this endpoint is removed or secured before production!
+      if (!debugEndpointsEnabled) {
+        return new Response("Not Found", { status: 404 });
+      }
       console.warn("Executing temporary /test-vectorize endpoint...");
       const query = url.searchParams.get("q");
       if (!query) {
@@ -79,7 +83,9 @@ export default {
 
     // --- Add temporary GET endpoint for testing AI ---
     if (request.method === "GET" && url.pathname === "/test-ai") {
-      // Ensure this endpoint is removed or secured before production!
+      if (!debugEndpointsEnabled) {
+        return new Response("Not Found", { status: 404 });
+      }
       console.warn("Executing temporary /test-ai endpoint...");
       return await handleAiTest(request, env);
     }
@@ -87,7 +93,9 @@ export default {
 
     // --- Add temporary POST endpoint for testing R2 Upload ---
     if (url.pathname === "/test-r2-upload") { 
-      // Ensure this endpoint is removed or secured before production!
+      if (!debugEndpointsEnabled) {
+        return new Response("Not Found", { status: 404 });
+      }
       console.warn("Executing temporary /test-r2-upload endpoint...");
       return await handleR2UploadTest(request, env);
     }
