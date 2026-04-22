@@ -188,7 +188,7 @@ export async function insertEmbeddings(
   const dataToInsert = vectors.map((vector, index) => ({
     id: metadata[index].messageId, // Use messageId as the vector ID
     values: vector,
-    metadata: metadata[index], // Store the whole metadata object
+    metadata: metadata[index] as any, // Store the whole metadata object
   }));
 
   if (dataToInsert.length === 0) {
@@ -352,7 +352,7 @@ export async function handleGetLatestTradeSignalR2(env: Env): Promise<R2ObjectBo
     }
 
     console.log(`Successfully retrieved object body for key: ${latestObject.key}`);
-    return objectBody;
+    return objectBody as any;
 
   } catch (error) {
     console.error("Error fetching latest trade signal from R2:", error);
@@ -458,7 +458,7 @@ async function handleWebhookRequest(request: Request, env: Env): Promise<Respons
         if (searchResults.matches.length > 0) {
           searchResults.matches.forEach((match, index) => {
             // Assuming metadata contains the original text
-            const originalText = match.metadata?.text || "(No text found)"; 
+            const originalText = (match.metadata?.text as string) || "(No text found)"; 
             // Escape Telegram MarkdownV2 special characters: _*[]()~`>#+-=|{}.!
             const escapedText = originalText.replace(/([_*[\\]()~`>#+\\-=|{}.!])/g, '\\$1');
             replyText += `${index + 1}. (${match.score.toFixed(3)}) ${escapedText}\n`;
@@ -504,8 +504,8 @@ async function handleWebhookRequest(request: Request, env: Env): Promise<Respons
         }
 
         const contextTexts = searchResults.matches
-          .map(match => match.metadata?.text)
-          .filter((text): text is string => !!text); // Type guard to ensure text is string
+          .map(match => match.metadata?.text as string)
+          .filter(text => !!text);
 
         if (contextTexts.length === 0) {
           await sendTelegramReply(chatId, `Couldn't find relevant context for \"${question}\"\\. Try asking differently or indexing more messages\\.`, env);
@@ -513,7 +513,7 @@ async function handleWebhookRequest(request: Request, env: Env): Promise<Respons
           // Limit context length to avoid exceeding token limits (e.g., ~3000 chars)
           const MAX_CONTEXT_LENGTH = 3000;
           let currentLength = 0;
-          const limitedContext = [];
+          const limitedContext: string[] = [];
           for (const text of contextTexts) {
             if (currentLength + text.length < MAX_CONTEXT_LENGTH) {
               limitedContext.push(text);
@@ -712,7 +712,7 @@ async function handleR2UploadTest(request: Request, env: Env): Promise<Response>
 
         // Put the object into R2
         // The body is a ReadableStream, which R2 put accepts directly
-        const r2Object = await env.UPLOADS_BUCKET.put(key, request.body, {
+        const r2Object = await env.UPLOADS_BUCKET.put(key, request.body as any, {
             // Automatically infers content-type based on extension if possible,
             // or you can set it explicitly:
             // httpMetadata: { contentType: request.headers.get('content-type') || 'application/octet-stream' },
