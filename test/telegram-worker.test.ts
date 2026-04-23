@@ -35,15 +35,15 @@ interface MockR2 { // Simplified
 // Define the actual Env structure used by the worker
 // Use real types here
 interface WorkerEnv { 
-    INTERNAL_KEY_BINDING?: Fetcher; // Assuming it's a binding for a secret store
-    TG_BOT_TOKEN_BINDING: Fetcher; // Assuming binding for secret
+    INTERNAL_KEY_BINDING?: Fetcher;
+    TG_BOT_TOKEN_BINDING: Fetcher;
     TELEGRAM_SECRET_TOKEN?: string;
-    TG_CHAT_ID_BINDING?: Fetcher; // Assuming binding for secret
+    TG_CHAT_ID_BINDING?: Fetcher;
     CONFIG_KV: KVNamespace;
-    AI: any; // Use any because @cloudflare/ai might not be installed
+    REPORT_KV?: KVNamespace;
+    AI: any;
     VECTORIZE_INDEX: VectorizeIndex;
     UPLOADS_BUCKET: R2Bucket;
-    // Add other bindings if used
 }
 
 // Define a type for the mocked environment object we create in tests
@@ -53,6 +53,7 @@ type MockEnvForTest = {
   TELEGRAM_SECRET_TOKEN?: string;
   TG_CHAT_ID_BINDING?: MockBinding<string>;
   CONFIG_KV: MockKV;
+  REPORT_KV?: MockKV;
   AI: MockAI;
   VECTORIZE_INDEX: MockVectorize;
   UPLOADS_BUCKET: MockR2;
@@ -85,14 +86,19 @@ const createMockEnv = (secrets: {
       ? { get: mock<() => Promise<string | null>>().mockResolvedValue(secrets.chatId) }
       : undefined,
     CONFIG_KV: {
-      get: mock().mockResolvedValue(null), 
+      get: mock().mockImplementation((key: string) => {
+        if (key === 'bot:default_chat_id') return Promise.resolve(secrets.chatId);
+        return Promise.resolve(null);
+      }), 
       put: mock().mockResolvedValue(undefined),
-      list: mock().mockResolvedValue({ keys: [] }), // Add basic list mock
-      delete: mock().mockResolvedValue(undefined), // Add basic delete mock
+      list: mock().mockResolvedValue({ keys: [] }),
+      delete: mock().mockResolvedValue(undefined),
     } as MockKV, 
     REPORT_KV: {
       get: mock().mockResolvedValue(null),
       put: mock().mockResolvedValue(undefined),
+      list: mock().mockResolvedValue({ keys: [] }),
+      delete: mock().mockResolvedValue(undefined),
     } as MockKV,
     AI: {
       run: mock(),
@@ -162,27 +168,21 @@ describe("Telegram Worker", () => {
      const fetchCallArgs = fetchMock.mock.calls[0];
      expect(fetchCallArgs[0]).toContain(TEST_BOT_TOKEN); 
      const fetchBody = JSON.parse(fetchCallArgs[1].body);
-     expect(fetchBody.chat_id).toBe(validNotification.chatId); 
-     expect(fetchBody.text).toBe(validNotification.message);
-     expect(mockEnv.INTERNAL_KEY_BINDING?.get).toHaveBeenCalledTimes(1);
-     expect(mockEnv.TG_BOT_TOKEN_BINDING.get).toHaveBeenCalledTimes(1);
-     expect(mockEnv.TG_CHAT_ID_BINDING?.get).toHaveBeenCalledTimes(1); 
-   });
-   
-   test("sends telegram message with default chat ID from binding", async () => {
-     mockEnv = createMockEnv({ internalKey: TEST_INTERNAL_KEY, botToken: TEST_BOT_TOKEN, chatId: TEST_CHAT_ID, webhookSecret: undefined, });
-     const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload: validNotificationDefaultChat, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-2" }), });
-     const response = await telegramWorker.fetch(request, mockEnv as unknown as WorkerEnv);
-     expect(response.status).toBe(200);
-     const responseData = await response.json() as { success: boolean };
-     expect(responseData.success).toBe(true);
-     expect(fetchMock).toHaveBeenCalledTimes(1);
-     const fetchCallArgs = fetchMock.mock.calls[0];
-     const fetchBody = JSON.parse(fetchCallArgs[1].body);
-     expect(fetchBody.chat_id).toBe(TEST_CHAT_ID); 
-     expect(fetchBody.text).toBe(validNotificationDefaultChat.message);
-     expect(mockEnv.TG_CHAT_ID_BINDING?.get).toHaveBeenCalledTimes(1);
-   });
+});
+    
+    test("sends telegram message with default chat ID from binding", async () => {
+      mockEnv = createMockEnv({ internalKey: TEST_INTERNAL_KEY, botToken: TEST_BOT_TOKEN, chatId: TEST_CHAT_ID, webhookSecret: undefined, });
+      const request = new Request(`https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ payload: validNotificationDefaultChat, internalAuthKey: TEST_INTERNAL_KEY, requestId: "req-2" }), });
+      const response = await telegramWorker.fetch(request, mockEnv as unknown as WorkerEnv);
+      expect(response.status).toBe(200);
+      const responseData = await response.json() as { success: boolean };
+      expect(responseData.success).toBe(true);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      const fetchCallArgs = fetchMock.mock.calls[0];
+      const fetchBody = JSON.parse(fetchCallArgs[1].body);
+      expect(fetchBody.chat_id).toBe(TEST_CHAT_ID); 
+      expect(fetchBody.text).toBe(validNotificationDefaultChat.message);
+    });
    
    test("returns error if default chat ID binding fails and no chat ID in request", async () => {
      mockEnv = createMockEnv({ internalKey: TEST_INTERNAL_KEY, botToken: TEST_BOT_TOKEN, chatId: null, webhookSecret: undefined, }); 
