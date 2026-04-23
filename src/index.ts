@@ -13,16 +13,15 @@ interface SecretBinding {
 
 // Define Env based on wrangler.toml and potential future bindings
 interface Env extends EnvWithKV {
-  UPLOADS_BUCKET: R2Bucket; // Add R2 binding for uploads
-  INTERNAL_KEY_BINDING?: SecretBinding; // For legacy /process auth
-  TG_BOT_TOKEN_BINDING: SecretBinding;  // Required
-  TELEGRAM_SECRET_TOKEN?: string; // For webhook validation
-  TG_CHAT_ID_BINDING?: SecretBinding;   // Optional default chat ID
-  AI: Ai; // Add the AI binding
-  VECTORIZE_INDEX: VectorizeIndex; // Add the Vectorize binding
-  ENABLE_DEBUG_ENDPOINTS?: string; // Set to "true" to enable test endpoints
-
-  // Add other bindings/vars if needed
+  UPLOADS_BUCKET: R2Bucket;
+  INTERNAL_KEY_BINDING?: SecretBinding;
+  TG_BOT_TOKEN_BINDING: SecretBinding;
+  TELEGRAM_SECRET_TOKEN?: string;
+  TG_CHAT_ID_BINDING?: SecretBinding;
+  AI: Ai;
+  VECTORIZE_INDEX: VectorizeIndex;
+  ENABLE_DEBUG_ENDPOINTS?: string;
+  CONFIG_KV: KVNamespace;
 }
 
 // Payload structure for incoming requests (both /process and /webhook)
@@ -53,6 +52,22 @@ interface TelegramMessageMetadata {
   timestamp: string; // ISO 8601 format
   text: string;
 }
+
+interface VectorizeMatches {
+  matches: Array<{
+    id: string;
+    score: number;
+    metadata?: Record<string, unknown>;
+  }>;
+}
+
+type R2ObjectBody = {
+  body: ReadableStream<Uint8Array>;
+  customMetadata: Record<string, string>;
+  httpEtag: string;
+  key: string;
+  size: number;
+};
 
 // --- Constants ---
 const PROCESS_ENDPOINT = "/process"; // Legacy endpoint
@@ -271,7 +286,18 @@ async function sendTelegramNotification(
         throw new Error("Telegram bot token not configured.");
     }
 
-    const defaultChatId = await env.TG_CHAT_ID_BINDING?.get();
+    const [botEnabled, defaultChatId, notifyExecution, notifyError] = await Promise.all([
+        env.CONFIG_KV?.get('bot:enabled').then(v => v !== 'false'),
+        env.CONFIG_KV?.get('bot:default_chat_id') || env.TG_CHAT_ID_BINDING?.get(),
+        env.CONFIG_KV?.get('bot:notify_on_execution').then(v => v !== 'false'),
+        env.CONFIG_KV?.get('bot:notify_on_error').then(v => v !== 'false'),
+    ]);
+
+    if (!botEnabled) {
+        console.log(`[${requestId}] Telegram notifications disabled via KV config`);
+        return { success: true, skipped: true, reason: 'bot disabled' };
+    }
+
     const chatId = payload.chatId || defaultChatId;
 
     if (!chatId) {
@@ -291,7 +317,7 @@ async function sendTelegramNotification(
         body: JSON.stringify({
         chat_id: chatId,
         text: payload.message,
-        parse_mode: "HTML", // Or "MarkdownV2" or null
+        parse_mode: "HTML",
         disable_web_page_preview: true,
         }),
     });
@@ -473,8 +499,8 @@ async function handleWebhookRequest(request: Request, env: Env): Promise<Respons
       const latestSignalObject = await handleGetLatestTradeSignalR2(env);
       if (latestSignalObject) {
         try {
-          const signalData = await latestSignalObject.json(); // Assuming JSON content
-          // Escape Telegram MarkdownV2 special characters
+          const text = await new Response(latestSignalObject.body).text();
+          const signalData = JSON.parse(text);
           const formattedSignal = JSON.stringify(signalData, null, 2)
               .replace(/([_*[\\]()~`>#+\\-=|{}.!])/g, '\\$1');
           await sendTelegramReply(chatId, `*Latest Trade Signal:*\n\`\`\`json\n${formattedSignal}\n\`\`\``, env);
