@@ -18,7 +18,6 @@ interface Env extends EnvWithKV {
   VECTORIZE_INDEX: VectorizeIndex;
   ENABLE_DEBUG_ENDPOINTS?: string;
   CONFIG_KV: KVNamespace;
-  REPORT_KV: KVNamespace;
   UPLOADS_BUCKET: R2Bucket;
 }
 
