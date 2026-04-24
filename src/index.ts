@@ -7,16 +7,19 @@ import type { R2Bucket } from "@cloudflare/workers-types"; // Import R2Bucket ty
 
 // --- Type Definitions ---
 
-interface Env {
+interface Env extends EnvWithKV {
   // Secrets bindings
   INTERNAL_KEY_BINDING?: string;
   TG_BOT_TOKEN_BINDING: string;
+  TELEGRAM_SECRET_TOKEN?: string;
   // Fallbacks/Options
   TG_CHAT_ID_BINDING?: string;
   AI: Ai;
   VECTORIZE_INDEX: VectorizeIndex;
   ENABLE_DEBUG_ENDPOINTS?: string;
   CONFIG_KV: KVNamespace;
+  REPORT_KV: KVNamespace;
+  UPLOADS_BUCKET: R2Bucket;
 }
 
 // Payload structure for incoming requests (both /process and /webhook)
