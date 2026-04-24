@@ -7,17 +7,12 @@ import type { R2Bucket } from "@cloudflare/workers-types"; // Import R2Bucket ty
 
 // --- Type Definitions ---
 
-interface SecretBinding {
-  get: () => Promise<string | null>;
-}
-
-// Define Env based on wrangler.toml and potential future bindings
-interface Env extends EnvWithKV {
-  UPLOADS_BUCKET: R2Bucket;
-  INTERNAL_KEY_BINDING?: SecretBinding;
-  TG_BOT_TOKEN_BINDING: SecretBinding;
-  TELEGRAM_SECRET_TOKEN?: string;
-  TG_CHAT_ID_BINDING?: SecretBinding;
+interface Env {
+  // Secrets bindings
+  INTERNAL_KEY_BINDING?: string;
+  TG_BOT_TOKEN_BINDING: string;
+  // Fallbacks/Options
+  TG_CHAT_ID_BINDING?: string;
   AI: Ai;
   VECTORIZE_INDEX: VectorizeIndex;
   ENABLE_DEBUG_ENDPOINTS?: string;
@@ -292,7 +287,7 @@ async function sendTelegramNotification(
     env: Env,
     requestId?: string
 ): Promise<any> {
-    const botToken = await env.TG_BOT_TOKEN_BINDING?.get();
+    const botToken = env.TG_BOT_TOKEN_BINDING;
     if (!botToken) {
         console.error(`[${requestId}] TG_BOT_TOKEN_BINDING secret not configured.`);
         throw new Error("Telegram bot token not configured.");
@@ -300,7 +295,7 @@ async function sendTelegramNotification(
 
     const [botEnabled, defaultChatId, notifyExecution, notifyError] = await Promise.all([
         env.CONFIG_KV?.get('bot:enabled').then(v => v !== 'false'),
-        env.CONFIG_KV?.get('bot:default_chat_id') || env.TG_CHAT_ID_BINDING?.get(),
+        env.CONFIG_KV?.get('bot:default_chat_id').then(v => v || env.TG_CHAT_ID_BINDING),
         env.CONFIG_KV?.get('bot:notify_on_execution').then(v => v !== 'false'),
         env.CONFIG_KV?.get('bot:notify_on_error').then(v => v !== 'false'),
     ]);
@@ -405,7 +400,7 @@ export async function handleGetLatestTradeSignalR2(env: Env): Promise<R2ObjectBo
  * @param env Environment containing the bot token.
  */
 async function sendTelegramReply(chatId: string | number, text: string, env: Env): Promise<Response> {
-  const botToken = await env.TG_BOT_TOKEN_BINDING?.get();
+  const botToken = env.TG_BOT_TOKEN_BINDING;
   if (!botToken) {
     console.error("Telegram Bot Token is not configured.");
     return createJsonResponse({ success: false, error: "Bot token not configured" }, 500);
@@ -641,7 +636,7 @@ async function handleProcessRequest(request: Request, env: Env): Promise<Respons
     console.log(`Processing legacy Telegram request ID: ${incomingRequestId}`);
 
     // --- Authenticate ---
-    const expectedInternalKey = await env.INTERNAL_KEY_BINDING?.get();
+    const expectedInternalKey = env.INTERNAL_KEY_BINDING;
     if (!expectedInternalKey) {
       console.error(`[${incomingRequestId}] INTERNAL_KEY_BINDING secret not configured.`);
       return createJsonResponse({ success: false, error: "Service configuration error" }, 500);

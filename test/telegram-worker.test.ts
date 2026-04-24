@@ -48,10 +48,10 @@ interface WorkerEnv {
 
 // Define a type for the mocked environment object we create in tests
 type MockEnvForTest = {
-  INTERNAL_KEY_BINDING?: MockBinding<string>;
-  TG_BOT_TOKEN_BINDING: MockBinding<string>;
+  INTERNAL_KEY_BINDING?: string | null;
+  TG_BOT_TOKEN_BINDING?: string | null;
   TELEGRAM_SECRET_TOKEN?: string;
-  TG_CHAT_ID_BINDING?: MockBinding<string>;
+  TG_CHAT_ID_BINDING?: string | null;
   CONFIG_KV: MockKV;
   REPORT_KV?: MockKV;
   AI: MockAI;
@@ -76,14 +76,12 @@ const createMockEnv = (secrets: {
    
   return {
     INTERNAL_KEY_BINDING: secrets.internalKey !== undefined 
-      ? { get: mock<() => Promise<string | null>>().mockResolvedValue(secrets.internalKey) } 
+      ? secrets.internalKey 
       : undefined,
-    TG_BOT_TOKEN_BINDING: {
-      get: mock<() => Promise<string | null>>().mockResolvedValue(secrets.botToken === undefined ? null : secrets.botToken),
-    },
+    TG_BOT_TOKEN_BINDING: secrets.botToken === undefined ? null : secrets.botToken,
     TELEGRAM_SECRET_TOKEN: secrets.webhookSecret === null ? undefined : secrets.webhookSecret,
     TG_CHAT_ID_BINDING: secrets.chatId !== undefined
-      ? { get: mock<() => Promise<string | null>>().mockResolvedValue(secrets.chatId) }
+      ? secrets.chatId
       : undefined,
     CONFIG_KV: {
       get: mock().mockImplementation((key: string) => {
@@ -155,7 +153,6 @@ describe("Telegram Worker", () => {
      const responseData = await response.json() as { error: string };
      expect(responseData.error).toContain("Authentication failed");
      expect(fetchMock).not.toHaveBeenCalled();
-     expect(mockEnv.INTERNAL_KEY_BINDING?.get).toHaveBeenCalledTimes(1);
    });
    
    test("sends telegram message with explicit chat ID", async () => {
