@@ -334,7 +334,7 @@ async function sendTelegramNotification(
         }),
     });
 
-    const responseData = await response.json();
+    const responseData = await response.json() as any;
 
     if (!response.ok) {
         console.error(`[${requestId}] Telegram API Error:`, responseData);
