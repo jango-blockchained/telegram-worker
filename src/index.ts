@@ -116,6 +116,18 @@ export default {
     }
     // --- End temporary test endpoint ---
 
+    // --- Add worker health check endpoint ---
+    if (request.method === "GET" && url.pathname === "/health") {
+      return new Response(
+        JSON.stringify({
+          status: "ok",
+          timestamp: new Date().toISOString(),
+        }),
+        { headers: { "Content-Type": "application/json" } }
+      );
+    }
+    // --- End health check ---
+
     if (request.method === "POST") {
       // Moved KV logging here as it likely only matters for POST requests
       await logKvTimestamp(env);
