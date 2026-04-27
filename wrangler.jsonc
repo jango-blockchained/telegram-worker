@@ -4,9 +4,10 @@
   "main": "src/index.ts",
   "compatibility_date": "2025-03-07", // Standardized
   "compatibility_flags": ["nodejs_compat"], // Standardized
-  "observability": { // Standardized
+  "observability": {
+    // Standardized
     "enabled": true,
-    "head_sampling_rate": 1
+    "head_sampling_rate": 1,
   },
   "vars": {
     // Secrets must be created via `wrangler secret put`
@@ -14,34 +15,34 @@
     "INTERNAL_KEY_BINDING": null,
     "TG_BOT_TOKEN_BINDING": null,
     "TG_CHAT_ID_BINDING": null,
-    "TELEGRAM_SECRET_TOKEN": null
+    "TELEGRAM_SECRET_TOKEN": null,
   },
   // Note: Removed secrets_store_secrets definition. Secrets are now declared in vars and expected via `wrangler secret put`.
   "kv_namespaces": [
     {
       "binding": "CONFIG_KV",
-      "id": "c5917667a21745e390ff969f32b1847d"
+      "id": "c5917667a21745e390ff969f32b1847d",
       // "preview_id": "<YOUR_PREVIEW_ID>" // Add preview ID for local dev/testing
-    }
+    },
   ],
   "r2_buckets": [
     {
       "binding": "UPLOADS_BUCKET",
-      "bucket_name": "user-uploads"
+      "bucket_name": "user-uploads",
       // "preview_bucket_name": "preview-user-uploads" // Optional
-    }
+    },
   ],
   "vectorize": [
     {
       "binding": "VECTORIZE_INDEX",
-      "index_name": "my-rag-index"
-    }
+      "index_name": "my-rag-index",
+    },
   ],
   "ai": {
-    "binding": "AI"
+    "binding": "AI",
   },
   "services": [
     { "binding": "TRADE_SERVICE", "service": "trade-worker" },
-    { "binding": "WEBHOOK_RECEIVER_API", "service": "hoox" }
-  ]
-} 
+    { "binding": "WEBHOOK_RECEIVER_API", "service": "hoox" },
+  ],
+}

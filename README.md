@@ -2,9 +2,9 @@
 
 **Last Updated:** April 2026
 
-[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) [![Runtime](https://img.shields.io/badge/Runtime-Bun-black?logo=bun)](https://bun.sh) [![Platform](https://img.shields.io/badge/Platform-Cloudflare®%20Edge%20Workers-orange?logo=cloudflare)](https://workers.cloudflare.com/) [![License](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/) [![Build Status](https://github.com/jango-blockchained/hoox-setup/actions/workflows/opencode.yml/badge.svg)](https://github.com/jango-blockchained/hoox-setup/actions/workflows/opencode.yml) 
+[![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) [![Runtime](https://img.shields.io/badge/Runtime-Bun-black?logo=bun)](https://bun.sh) [![Platform](https://img.shields.io/badge/Platform-Cloudflare®%20Edge%20Workers-orange?logo=cloudflare)](https://workers.cloudflare.com/) [![License](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/) [![Build Status](https://github.com/jango-blockchained/hoox-setup/actions/workflows/opencode.yml/badge.svg)](https://github.com/jango-blockchained/hoox-setup/actions/workflows/opencode.yml)
 
-**[Main Repository](https://github.com/jango-blockchained/hoox-setup)** 
+**[Main Repository](https://github.com/jango-blockchained/hoox-setup)**
 
 A Cloudflare® Worker service that handles interactions with the Telegram Bot API. It can send messages, process incoming commands (via webhook or polling), and potentially leverage other Cloudflare® services like R2, AI, and Vectorize.
 
@@ -52,28 +52,28 @@ A Cloudflare® Worker service that handles interactions with the Telegram Bot AP
         "INTERNAL_KEY_BINDING",
         "TELEGRAM_BOT_TOKEN",
         "TELEGRAM_CHAT_ID_DEFAULT",
-        "TELEGRAM_WEBHOOK_SECRET"
+        "TELEGRAM_WEBHOOK_SECRET",
       ],
       "kv_namespaces": [
         // Example: If using KV for config
-        { "binding": "CONFIG_KV", "id": "...", "preview_id": "..." }
+        { "binding": "CONFIG_KV", "id": "...", "preview_id": "..." },
       ],
       "r2_buckets": [
         // Example: If storing user uploads
-        { "binding": "UPLOADS_BUCKET", "bucket_name": "user-uploads" }
+        { "binding": "UPLOADS_BUCKET", "bucket_name": "user-uploads" },
       ],
       "vectorize": [
         // Example: If using RAG
-        { "binding": "VECTORIZE_INDEX", "index_name": "my-rag-index" }
+        { "binding": "VECTORIZE_INDEX", "index_name": "my-rag-index" },
       ],
       "ai": {
         // Example: If using Workers AI
-        "binding": "AI"
+        "binding": "AI",
       },
       "observability": {
-         "enabled": true,
-         "head_sampling_rate": 1
-       }
+        "enabled": true,
+        "head_sampling_rate": 1,
+      },
     }
     ```
 5.  Update the corresponding `worker-configuration.d.ts` file.
@@ -81,9 +81,9 @@ A Cloudflare® Worker service that handles interactions with the Telegram Bot AP
     ```bash
     curl "https://api.telegram.org/bot<YOUR_TELEGRAM_BOT_TOKEN>/setWebhook?url=<WORKER_URL>/telegram/<TELEGRAM_WEBHOOK_SECRET>"
     ```
-    *   `<WORKER_URL>` is the deployed URL of this worker.
-    *   `<TELEGRAM_WEBHOOK_SECRET>` is the value you set for the secret.
-    *   Ensure your worker code handles requests at the `/telegram/<TELEGRAM_WEBHOOK_SECRET>` path.
+    - `<WORKER_URL>` is the deployed URL of this worker.
+    - `<TELEGRAM_WEBHOOK_SECRET>` is the value you set for the secret.
+    - Ensure your worker code handles requests at the `/telegram/<TELEGRAM_WEBHOOK_SECRET>` path.
 7.  For local development, create a `.dev.vars` file and define the secrets/variables:
     ```.dev.vars
     # Mock secrets for local dev:
@@ -101,7 +101,8 @@ Run locally:
 ```bash
 bun run dev
 ```
-*Note: Receiving Telegram webhooks locally requires a tunneling service like `cloudflared tunnel`.* 
+
+_Note: Receiving Telegram webhooks locally requires a tunneling service like `cloudflared tunnel`._
 
 Deploy:
 
@@ -141,7 +142,9 @@ This worker accepts requests from authenticated internal services (like `hoox`) 
   ```json
   {
     "success": true,
-    "result": { /* Raw JSON response from Telegram Bot API's sendMessage method */ },
+    "result": {
+      /* Raw JSON response from Telegram Bot API's sendMessage method */
+    },
     "error": null
   }
   ```
@@ -176,7 +179,6 @@ The worker typically defaults to sending messages with `parse_mode` set to `HTML
 - Incoming Telegram webhooks are authenticated using the secret path segment (`TELEGRAM_WEBHOOK_SECRET`).
 - The Telegram Bot Token and other secrets are stored securely using Cloudflare® Workers Secrets.
 
-
 ---
 
-*Cloudflare® and the Cloudflare logo are trademarks and/or registered trademarks of Cloudflare, Inc. in the United States and other jurisdictions.*
+_Cloudflare® and the Cloudflare logo are trademarks and/or registered trademarks of Cloudflare, Inc. in the United States and other jurisdictions._
