@@ -4,7 +4,7 @@ import {
   type EnvWithKV,
   kvTimestampMiddleware,
   logKvTimestamp,
-} from "../../../src/utils/kvUtils"; // Import shared function and Env type
+} from "../../../packages/shared/src/kvUtils"; // Import shared function and Env type
 import type { Ai } from "@cloudflare/ai"; // Import the Ai type
 import type { VectorizeIndex } from "@cloudflare/workers-types"; // Import VectorizeIndex type
 import type { R2Bucket } from "@cloudflare/workers-types"; // Import R2Bucket type
