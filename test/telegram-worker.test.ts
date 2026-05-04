@@ -184,7 +184,7 @@ describe("Telegram Worker", () => {
         }),
       }
     );
-    const response = await telegramWorker.fetch(request as any, mockEnv as any);
+    const response = await telegramWorker.fetch(request as any, mockEnv as any, {} as ExecutionContext);
     expect(response.status).toBe(500);
     const responseData = (await response.json()) as { error: string };
     expect(responseData.error).toContain("Service configuration error");
@@ -209,7 +209,7 @@ describe("Telegram Worker", () => {
         }),
       }
     );
-    const response = await telegramWorker.fetch(request as any, mockEnv as any);
+    const response = await telegramWorker.fetch(request as any, mockEnv as any, {} as ExecutionContext);
     expect(response.status).toBe(401);
     const responseData = (await response.json()) as { error: string };
     expect(responseData.error).toContain("Authentication failed");
@@ -235,7 +235,7 @@ describe("Telegram Worker", () => {
         }),
       }
     );
-    const response = await telegramWorker.fetch(request as any, mockEnv as any);
+    const response = await telegramWorker.fetch(request as any, mockEnv as any, {} as ExecutionContext);
     expect(response.status).toBe(200);
     const responseData = (await response.json()) as { success: boolean };
     expect(responseData.success).toBe(true);
@@ -264,7 +264,7 @@ describe("Telegram Worker", () => {
         }),
       }
     );
-    const response = await telegramWorker.fetch(request as any, mockEnv as any);
+    const response = await telegramWorker.fetch(request as any, mockEnv as any, {} as ExecutionContext);
     expect(response.status).toBe(200);
     const responseData = (await response.json()) as { success: boolean };
     expect(responseData.success).toBe(true);
@@ -294,7 +294,7 @@ describe("Telegram Worker", () => {
         }),
       }
     );
-    const response = await telegramWorker.fetch(request as any, mockEnv as any);
+    const response = await telegramWorker.fetch(request as any, mockEnv as any, {} as ExecutionContext);
     expect(response.status).toBe(500);
     const responseData = (await response.json()) as { error: string };
     expect(responseData.error).toContain("Chat ID configuration error");
@@ -320,7 +320,7 @@ describe("Telegram Worker", () => {
         }),
       }
     );
-    const response = await telegramWorker.fetch(request as any, mockEnv as any);
+    const response = await telegramWorker.fetch(request as any, mockEnv as any, {} as ExecutionContext);
     expect(response.status).toBe(500);
     const responseData = (await response.json()) as { error: string };
     expect(responseData.error).toContain("Telegram bot token not configured");
@@ -347,7 +347,7 @@ describe("Telegram Worker", () => {
         }),
       }
     );
-    const response = await telegramWorker.fetch(request as any, mockEnv as any);
+    const response = await telegramWorker.fetch(request as any, mockEnv as any, {} as ExecutionContext);
     expect(response.status).toBe(500);
     const responseData = (await response.json()) as { error: string };
     expect(responseData.error).toContain("Network Error");
@@ -378,7 +378,7 @@ describe("Telegram Worker", () => {
         }),
       }
     );
-    const response = await telegramWorker.fetch(request as any, mockEnv as any);
+    const response = await telegramWorker.fetch(request as any, mockEnv as any, {} as ExecutionContext);
     expect(response.status).toBe(500);
     const responseData = (await response.json()) as { error: string };
     expect(responseData.error).toContain("Telegram API request failed");
@@ -684,7 +684,7 @@ describe("Telegram Worker Webhook Handler (/webhook)", () => {
         body: JSON.stringify({ update_id: 1, message: { text: "hi" } }),
       }
     );
-    const response = await telegramWorker.fetch(request as any, mockEnv as any);
+    const response = await telegramWorker.fetch(request as any, mockEnv as any, {} as ExecutionContext);
     expect(response.status).toBe(401);
     const body = await response.text();
     expect(body).toBe("Unauthorized");
@@ -702,7 +702,7 @@ describe("Telegram Worker Webhook Handler (/webhook)", () => {
         body: JSON.stringify({ update_id: 1, message: { text: "hi" } }),
       }
     );
-    const response = await telegramWorker.fetch(request as any, mockEnv as any);
+    const response = await telegramWorker.fetch(request as any, mockEnv as any, {} as ExecutionContext);
     expect(response.status).toBe(401);
     const body = await response.text();
     expect(body).toBe("Unauthorized");
@@ -726,7 +726,7 @@ describe("Telegram Worker Webhook Handler (/webhook)", () => {
         body: JSON.stringify({ update_id: 1, message: { text: "hi" } }),
       }
     );
-    const response = await telegramWorker.fetch(request as any, mockEnv as any);
+    const response = await telegramWorker.fetch(request as any, mockEnv as any, {} as ExecutionContext);
     expect(response.status).toBe(401);
     const body = await response.text();
     expect(body).toBe("Unauthorized");
@@ -758,7 +758,7 @@ describe("Telegram Worker Webhook Handler (/webhook)", () => {
         body: JSON.stringify(webhookBody),
       }
     );
-    const response = await telegramWorker.fetch(request as any, mockEnv as any);
+    const response = await telegramWorker.fetch(request as any, mockEnv as any, {} as ExecutionContext);
     expect(response.status).toBe(200);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(mockAiRun).toHaveBeenCalledTimes(1);

@@ -8,6 +8,11 @@ import {
 import type { Ai } from "@cloudflare/ai"; // Import the Ai type
 import type { VectorizeIndex } from "@cloudflare/workers-types"; // Import VectorizeIndex type
 import type { R2Bucket } from "@cloudflare/workers-types"; // Import R2Bucket type
+import { createErrorResponse, Errors } from '@hoox/shared/errors';
+import { createLogger, withRequestLog } from '@hoox/shared/middleware';
+import { createRouter } from '@hoox/shared/router';
+import type { Handler } from '@hoox/shared/types/router';
+import type { StandardResponse, WebhookPayload, TradeAction } from '@hoox/shared/types';
 
 // --- Type Definitions ---
 
@@ -38,12 +43,7 @@ interface ProcessRequestBody {
   payload: NotificationPayload; // Nested payload
 }
 
-// Standardized response structure
-interface StandardResponse {
-  success: boolean;
-  result?: any;
-  error?: string | null;
-}
+// Standardized response structure - imported from shared types
 
 // Define the structure for metadata stored with embeddings
 interface TelegramMessageMetadata {
@@ -75,38 +75,36 @@ const PROCESS_ENDPOINT = "/process"; // Legacy endpoint
 const WEBHOOK_ENDPOINT = "/webhook"; // New endpoint for service bindings
 
 // --- Worker Definition ---
+
+const logger = createLogger({ service: 'telegram-worker', module: 'router' });
+
+const router = createRouter<Env>();
+
+// Define routes
+router.get('/health', async (request: Request, env: Env, ctx: ExecutionContext) => {
+  return createErrorResponse({ 
+    message: JSON.stringify({
+      status: "ok",
+      timestamp: new Date().toISOString(),
+    }), 
+    status: 200 
+  });
+});
+
+router.post(PROCESS_ENDPOINT, async (request: Request, env: Env, ctx: ExecutionContext) => {
+  await logKvTimestamp(env);
+  return await handleProcessRequest(request, env);
+});
+
+router.post(WEBHOOK_ENDPOINT, async (request: Request, env: Env, ctx: ExecutionContext) => {
+  await logKvTimestamp(env);
+  return await handleWebhookRequest(request, env);
+});
+
 export default {
-  async fetch(request: Request, env: Env): Promise<Response> {
-    const url = new URL(request.url);
-    const debugEndpointsEnabled = env.ENABLE_DEBUG_ENDPOINTS === "true";
-
-    // Call the shared KV logging function (Consider moving this inside specific handlers if needed)
-    // await logKvTimestamp(env); // Moved to only run on POST for now
-
-    // --- Worker health check endpoint ---
-    if (request.method === "GET" && url.pathname === "/health") {
-      return new Response(
-        JSON.stringify({
-          status: "ok",
-          timestamp: new Date().toISOString(),
-        }),
-        { headers: { "Content-Type": "application/json" } }
-      );
-    }
-    // --- End health check ---
-
-    if (request.method === "POST") {
-      // Moved KV logging here as it likely only matters for POST requests
-      await logKvTimestamp(env);
-
-      if (url.pathname === PROCESS_ENDPOINT) {
-        return await handleProcessRequest(request, env);
-      } else if (url.pathname === WEBHOOK_ENDPOINT) {
-        return await handleWebhookRequest(request, env);
-      }
-    }
-    return new Response("Not Found", { status: 404 });
-  },
+  fetch: withRequestLog((request: Request, env: Env, ctx: ExecutionContext) => {
+    return router.handle(request, env, ctx);
+  }, { service: 'telegram-worker', module: 'router' }),
 };
 
 // --- Helper Functions ---
