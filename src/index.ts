@@ -28,6 +28,7 @@ interface Env extends EnvWithKV {
   ENABLE_DEBUG_ENDPOINTS?: string;
   CONFIG_KV: KVNamespace;
   UPLOADS_BUCKET: R2Bucket;
+  ANALYTICS_SERVICE?: Fetcher;
 }
 
 // Payload structure for incoming requests (both /process and /webhook)
@@ -73,6 +74,26 @@ type R2ObjectBody = {
 // --- Constants ---
 const PROCESS_ENDPOINT = "/process"; // Legacy endpoint
 const WEBHOOK_ENDPOINT = "/webhook"; // New endpoint for service bindings
+
+// Analytics tracking helper
+async function trackAnalytics(
+  env: Env,
+  endpoint: string,
+  body: Record<string, any>
+): Promise<void> {
+  if (!env.ANALYTICS_SERVICE) return;
+  try {
+    await env.ANALYTICS_SERVICE.fetch(
+      new Request("http://analytics-service" + endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      }) as any
+    );
+  } catch (e) {
+    console.error("Analytics tracking failed:", e);
+  }
+}
 
 // --- Worker Definition ---
 
@@ -338,6 +359,16 @@ async function sendTelegramNotification(
   }
 
   console.log(`[${requestId}] Telegram API Success Response:`, responseData);
+
+  // Track notification analytics (non-blocking)
+  trackAnalytics(env, "/track/notification", {
+    data: {
+      type: "telegram",
+      target: chatId,
+      success: response.ok,
+    },
+  });
+
   return responseData;
 }
 
