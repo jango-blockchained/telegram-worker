@@ -4,9 +4,21 @@
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white)](https://www.typescriptlang.org/) [![Runtime](https://img.shields.io/badge/Runtime-Bun-black?logo=bun)](https://bun.sh) [![Platform](https://img.shields.io/badge/Platform-Cloudflare®%20Edge%20Workers-orange?logo=cloudflare)](https://workers.cloudflare.com/) [![License](https://img.shields.io/badge/License-CC%20BY%204.0-lightgrey.svg)](https://creativecommons.org/licenses/by/4.0/) [![Build Status](https://github.com/jango-blockchained/hoox-setup/actions/workflows/opencode.yml/badge.svg)](https://github.com/jango-blockchained/hoox-setup/actions/workflows/opencode.yml)
 
-**[Main Repository](https://github.com/jango-blockchained/hoox-setup)**
+**[Main Repository](https://github.com/jango-blockchained/hoox-setup)** · **[View on GitHub](https://github.com/jango-blockchained/telegram-worker)**
 
 A Cloudflare® Worker service that handles interactions with the Telegram Bot API. It can send messages, process incoming commands (via webhook or polling), and potentially leverage other Cloudflare® services like R2, AI, and Vectorize.
+
+---
+
+## About
+
+This worker is part of the **[Hoox Trading System](https://github.com/jango-blockchained/hoox-setup)** - a zero-latency edge trading ecosystem. The `telegram-worker` handles:
+
+- **Instant Notifications**: Sends trade confirmations and AI-generated market summaries to Telegram
+- **Command Processing**: Accepts and processes commands like `/ask` and `/search`
+- **AI Integration**: Leverages Workers AI for natural language processing and RAG
+- **Secure Authentication**: Validates requests from other workers via shared internal keys
+- **Media Handling**: Supports file uploads and retrieval via R2 storage
 
 ## Features
 
