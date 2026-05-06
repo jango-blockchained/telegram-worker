@@ -9,6 +9,7 @@ import type { Ai } from "@cloudflare/ai"; // Import the Ai type
 import type { VectorizeIndex } from "@cloudflare/workers-types"; // Import VectorizeIndex type
 import type { R2Bucket } from "@cloudflare/workers-types"; // Import R2Bucket type
 import { createErrorResponse, Errors } from '@hoox/shared/errors';
+import { createJsonResponse } from '@hoox/shared/json-response';
 import { createLogger, withRequestLog } from '@hoox/shared/middleware';
 import { createRouter } from '@hoox/shared/router';
 import type { Handler } from '@hoox/shared/types/router';
@@ -106,19 +107,6 @@ export default {
 };
 
 // --- Helper Functions ---
-
-/**
- * Creates a standard JSON response.
- */
-function createJsonResponse(
-  body: StandardResponse,
-  status: number = 200
-): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
 
 /**
  * Generates embeddings for the given text using the specified AI model.
