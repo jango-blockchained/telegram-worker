@@ -477,8 +477,8 @@ async function handleWebhookRequest(
   try {
     update = await request.json();
     console.log("Received Telegram update:", JSON.stringify(update, null, 2));
-  } catch (e) {
-    console.error("Failed to parse Telegram update JSON:", e);
+  } catch (error: unknown) {
+    console.error("Failed to parse Telegram update JSON:", error);
     return new Response("Bad Request: Invalid JSON", { status: 400 });
   }
 
