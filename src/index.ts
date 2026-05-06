@@ -12,11 +12,13 @@ import { createErrorResponse, Errors } from '@hoox/shared/errors';
 import { createLogger, withRequestLog } from '@hoox/shared/middleware';
 import { createRouter } from '@hoox/shared/router';
 import type { Handler } from '@hoox/shared/types/router';
-import type { StandardResponse, WebhookPayload, TradeAction } from '@hoox/shared/types';
+import type { StandardResponse, WebhookPayload, TradeAction, ProcessRequestBody } from '@hoox/shared/types';
+import { trackAnalytics } from '@hoox/shared/analytics';
+import type { AnalyticsEnv } from '@hoox/shared/analytics';
 
 // --- Type Definitions ---
 
-interface Env extends EnvWithKV {
+interface Env extends EnvWithKV, AnalyticsEnv {
   // Secrets bindings
   INTERNAL_KEY_BINDING?: string;
   TG_BOT_TOKEN_BINDING: string;
@@ -28,7 +30,6 @@ interface Env extends EnvWithKV {
   ENABLE_DEBUG_ENDPOINTS?: string;
   CONFIG_KV: KVNamespace;
   UPLOADS_BUCKET: R2Bucket;
-  ANALYTICS_SERVICE?: Fetcher;
 }
 
 // Payload structure for incoming requests (both /process and /webhook)
@@ -38,11 +39,7 @@ interface NotificationPayload {
 }
 
 // Payload for the legacy /process endpoint
-interface ProcessRequestBody {
-  requestId?: string;
-  internalAuthKey?: string;
-  payload: NotificationPayload; // Nested payload
-}
+type TelegramProcessRequestBody = ProcessRequestBody<NotificationPayload>;
 
 // Standardized response structure - imported from shared types
 
@@ -74,26 +71,6 @@ type R2ObjectBody = {
 // --- Constants ---
 const PROCESS_ENDPOINT = "/process"; // Legacy endpoint
 const WEBHOOK_ENDPOINT = "/webhook"; // New endpoint for service bindings
-
-// Analytics tracking helper
-async function trackAnalytics(
-  env: Env,
-  endpoint: string,
-  body: Record<string, any>
-): Promise<void> {
-  if (!env.ANALYTICS_SERVICE) return;
-  try {
-    await env.ANALYTICS_SERVICE.fetch(
-      new Request("http://localhost" + endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      }) as any
-    );
-  } catch (e) {
-    console.error("Analytics tracking failed:", e);
-  }
-}
 
 // --- Worker Definition ---
 
@@ -753,7 +730,7 @@ async function handleProcessRequest(
   let incomingRequestId = "unknown";
 
   try {
-    const data: ProcessRequestBody = await request.json();
+    const data: TelegramProcessRequestBody = await request.json();
     incomingRequestId = data?.requestId || crypto.randomUUID();
     const internalAuthKey = data?.internalAuthKey;
 
