@@ -14,8 +14,8 @@
     "checkJs": false,
     "noEmit": true,
     "isolatedModules": true,
-    "types": [],
-    "rootDir": "./src"
+    "types": ["@cloudflare/workers-types"],
+    "ignoreDeprecations": "5.0"
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "test"]
