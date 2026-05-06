@@ -588,10 +588,10 @@ async function handleWebhookRequest(
           env
         );
       } else {
-        console.log(`Processing /ask command with question: \"${question}\"`);
+        console.log(`Processing /ask command with question: "${question}"`);
         await sendTelegramReply(
           chatId,
-          `_Searching message history for context related to \"${question}\"\\.\\.\\._`,
+`_Searching message history for context related to "${question}".`,
           env
         ); // Send feedback
 
@@ -616,7 +616,7 @@ async function handleWebhookRequest(
         if (contextTexts.length === 0) {
           await sendTelegramReply(
             chatId,
-            `Couldn't find relevant context for \"${question}\"\\. Try asking differently or indexing more messages\\.`,
+            `Couldn't find relevant context for "${question}". Try asking differently or indexing more messages.`,
             env
           );
         } else {
