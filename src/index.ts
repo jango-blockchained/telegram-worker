@@ -8,14 +8,27 @@ import {
 import type { Ai } from "@cloudflare/ai"; // Import the Ai type
 import type { VectorizeIndex } from "@cloudflare/workers-types"; // Import VectorizeIndex type
 import type { R2Bucket } from "@cloudflare/workers-types"; // Import R2Bucket type
-import { createErrorResponse, Errors } from '@hoox/shared/errors';
-import { createJsonResponse } from '@hoox/shared/json-response';
-import { createLogger, withRequestLog } from '@hoox/shared/middleware';
-import { createRouter } from '@hoox/shared/router';
-import type { Handler } from '@hoox/shared/types/router';
-import type { StandardResponse, WebhookPayload, TradeAction, ProcessRequestBody } from '@hoox/shared/types';
-import { trackAnalytics } from '@hoox/shared/analytics';
-import type { AnalyticsEnv } from '@hoox/shared/analytics';
+import {
+  createErrorResponse,
+  Errors,
+  createJsonResponse,
+} from "@jango-blockchained/hoox-shared/errors";
+import {
+  createLogger,
+  withRequestLog,
+} from "@jango-blockchained/hoox-shared/middleware";
+import { createRouter } from "@jango-blockchained/hoox-shared/router";
+import type { Handler } from "@jango-blockchained/hoox-shared/types/router";
+import { KVKeys } from "@jango-blockchained/hoox-shared/kvKeys";
+import type {
+  StandardResponse,
+  WebhookPayload,
+  TradeAction,
+  ProcessRequestBody,
+} from "@jango-blockchained/hoox-shared/types";
+import { trackAnalytics } from "@jango-blockchained/hoox-shared/analytics";
+import type { AnalyticsEnv } from "@jango-blockchained/hoox-shared/analytics";
+import { healthCheck } from "@jango-blockchained/hoox-shared/health";
 
 // --- Type Definitions ---
 
@@ -75,35 +88,41 @@ const WEBHOOK_ENDPOINT = "/webhook"; // New endpoint for service bindings
 
 // --- Worker Definition ---
 
-const logger = createLogger({ service: 'telegram-worker', module: 'router' });
+const logger = createLogger({ service: "telegram-worker", module: "router" });
 
 const router = createRouter<Env>();
 
 // Define routes
-router.get('/health', async (request: Request, env: Env, ctx: ExecutionContext) => {
-  return createErrorResponse({ 
-    message: JSON.stringify({
-      status: "ok",
-      timestamp: new Date().toISOString(),
-    }), 
-    status: 200 
-  });
-});
+router.get(
+  "/health",
+  async (request: Request, env: Env, ctx: ExecutionContext) => {
+    return healthCheck({ worker: "telegram-worker" });
+  }
+);
 
-router.post(PROCESS_ENDPOINT, async (request: Request, env: Env, ctx: ExecutionContext) => {
-  await logKvTimestamp(env);
-  return await handleProcessRequest(request, env);
-});
+router.post(
+  PROCESS_ENDPOINT,
+  async (request: Request, env: Env, ctx: ExecutionContext) => {
+    await logKvTimestamp(env);
+    return await handleProcessRequest(request, env);
+  }
+);
 
-router.post(WEBHOOK_ENDPOINT, async (request: Request, env: Env, ctx: ExecutionContext) => {
-  await logKvTimestamp(env);
-  return await handleWebhookRequest(request, env);
-});
+router.post(
+  WEBHOOK_ENDPOINT,
+  async (request: Request, env: Env, ctx: ExecutionContext) => {
+    await logKvTimestamp(env);
+    return await handleWebhookRequest(request, env);
+  }
+);
 
 export default {
-  fetch: withRequestLog((request: Request, env: Env, ctx: ExecutionContext) => {
-    return router.handle(request, env, ctx);
-  }, { service: 'telegram-worker', module: 'router' }),
+  fetch: withRequestLog(
+    (request: Request, env: Env, ctx: ExecutionContext) => {
+      return router.handle(request, env, ctx);
+    },
+    { service: "telegram-worker", module: "router" }
+  ),
 };
 
 // --- Helper Functions ---
@@ -147,7 +166,9 @@ export async function generateEmbeddings(
         ? error.message
         : String(error || "Unknown AI error");
     console.error("Error generating embeddings:", errorMsg, error);
-    throw new Error(`Failed to generate embeddings: ${errorMsg}`);
+    throw new Error(`Failed to generate embeddings: ${errorMsg}`, {
+      cause: error,
+    });
   }
 }
 
@@ -202,7 +223,9 @@ export async function insertEmbeddings(
       errorMsg,
       error
     );
-    throw new Error(`Failed to insert embeddings: ${errorMsg}`);
+    throw new Error(`Failed to insert embeddings: ${errorMsg}`, {
+      cause: error,
+    });
   }
 }
 
@@ -253,7 +276,9 @@ export async function queryEmbeddings(
         : String(error || "Unknown query error");
     console.error("Error querying embeddings:", errorMsg, error);
     // Re-throw the error to be handled by the caller
-    throw new Error(`Failed to query embeddings: ${errorMsg}`);
+    throw new Error(`Failed to query embeddings: ${errorMsg}`, {
+      cause: error,
+    });
   }
 }
 
@@ -277,12 +302,14 @@ async function sendTelegramNotification(
 
   const [botEnabled, defaultChatId, notifyExecution, notifyError] =
     await Promise.all([
-      env.CONFIG_KV?.get("bot:enabled").then((v) => v !== "false"),
-      env.CONFIG_KV?.get("bot:default_chat_id").then(
-        (v) => v || env.TG_CHAT_ID_BINDING
+      env.CONFIG_KV?.get(KVKeys.KV_BOT_ENABLED).then((v) => v !== "false"),
+      env.CONFIG_KV?.get(KVKeys.KV_BOT_DEFAULT_CHAT_ID).then((v) => v || ""),
+      env.CONFIG_KV?.get(KVKeys.KV_BOT_NOTIFY_ON_EXECUTION).then(
+        (v) => v !== "false"
       ),
-      env.CONFIG_KV?.get("bot:notify_on_execution").then((v) => v !== "false"),
-      env.CONFIG_KV?.get("bot:notify_on_error").then((v) => v !== "false"),
+      env.CONFIG_KV?.get(KVKeys.KV_BOT_NOTIFY_ON_ERROR).then(
+        (v) => v !== "false"
+      ),
     ]);
 
   if (!botEnabled) {
@@ -579,7 +606,7 @@ async function handleWebhookRequest(
         console.log(`Processing /ask command with question: "${question}"`);
         await sendTelegramReply(
           chatId,
-`_Searching message history for context related to "${question}".`,
+          `_Searching message history for context related to "${question}".`,
           env
         ); // Send feedback
 

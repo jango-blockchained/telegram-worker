@@ -93,6 +93,7 @@ This worker is part of the **[Hoox Trading System](https://github.com/jango-bloc
     ```bash
     curl "https://api.telegram.org/bot<YOUR_TELEGRAM_BOT_TOKEN>/setWebhook?url=<WORKER_URL>/telegram/<TELEGRAM_WEBHOOK_SECRET>"
     ```
+
     - `<WORKER_URL>` is the deployed URL of this worker.
     - `<TELEGRAM_WEBHOOK_SECRET>` is the value you set for the secret.
     - Ensure your worker code handles requests at the `/telegram/<TELEGRAM_WEBHOOK_SECRET>` path.
