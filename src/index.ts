@@ -10,6 +10,7 @@ import type { R2Bucket } from "@cloudflare/workers-types"; // Import R2Bucket ty
 import {
   Errors,
   createJsonResponse,
+  toError,
 } from "@jango-blockchained/hoox-shared/errors";
 import {
   createLogger,
@@ -153,10 +154,7 @@ export async function generateEmbeddings(
     console.log(`Successfully generated ${response.data.length} embedding(s).`);
     return response.data;
   } catch (error: unknown) {
-    const errorMsg =
-      error instanceof Error
-        ? error.message
-        : String(error || "Unknown AI error");
+    const errorMsg = toError(error, "Unknown AI error");
     console.error("Error generating embeddings:", errorMsg, error);
     throw new Error(`Failed to generate embeddings: ${errorMsg}`, {
       cause: error,
@@ -206,10 +204,7 @@ export async function insertEmbeddings(
     const insertResult = await env.VECTORIZE_INDEX.insert(dataToInsert);
     console.log("Vectorize insertion successful:", insertResult);
   } catch (error: unknown) {
-    const errorMsg =
-      error instanceof Error
-        ? error.message
-        : String(error || "Unknown Vectorize error");
+    const errorMsg = toError(error, "Unknown Vectorize error");
     console.error(
       "Error inserting embeddings into Vectorize:",
       errorMsg,
@@ -262,10 +257,7 @@ export async function queryEmbeddings(
 
     return results;
   } catch (error: unknown) {
-    const errorMsg =
-      error instanceof Error
-        ? error.message
-        : String(error || "Unknown query error");
+    const errorMsg = toError(error, "Unknown query error");
     console.error("Error querying embeddings:", errorMsg, error);
     // Re-throw the error to be handled by the caller
     throw new Error(`Failed to query embeddings: ${errorMsg}`, {
@@ -405,7 +397,7 @@ export async function handleGetLatestTradeSignalR2(
       `Successfully retrieved object body for key: ${latestObject.key}`
     );
     return objectBody as any;
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Error fetching latest trade signal from R2:", error);
     return null;
   }
@@ -465,7 +457,7 @@ async function sendTelegramReply(
     // Telegram webhook expects a 200 OK even if the reply send had issues downstream.
     // The response here is mainly for the worker's fetch caller, not Telegram itself.
     return createJsonResponse({ success: true, result: responseBody }, 200);
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Network error sending Telegram reply:", error);
     return createJsonResponse(
       { success: false, error: "Network error sending reply" },
@@ -571,7 +563,7 @@ async function handleWebhookRequest(
             `*Latest Trade Signal:*\n\`\`\`json\n${formattedSignal}\n\`\`\``,
             env
           );
-        } catch (parseError) {
+        } catch (parseError: unknown) {
           console.error("Failed to parse latest signal JSON:", parseError);
           await sendTelegramReply(
             chatId,
@@ -605,7 +597,7 @@ async function handleWebhookRequest(
         let searchResults: VectorizeMatches | null = null;
         try {
           searchResults = await queryEmbeddings(question, env, 5); // Get top 5 contexts
-        } catch (vectorError) {
+        } catch (vectorError: unknown) {
           console.error("Error querying Vectorize during /ask:", vectorError);
           await sendTelegramReply(
             chatId,
@@ -666,7 +658,7 @@ async function handleWebhookRequest(
                 { role: "user", content: userPrompt },
               ],
             });
-          } catch (aiError) {
+          } catch (aiError: unknown) {
             console.error("Error calling AI during /ask:", aiError);
             await sendTelegramReply(
               chatId,
@@ -710,7 +702,7 @@ async function handleWebhookRequest(
 
     // Respond OK to Telegram webhook immediately after queuing the reply/processing
     return new Response("OK", { status: 200 });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error("Error processing Telegram message:", error);
     // Try to send an error message back to the user if possible
     try {
@@ -719,7 +711,7 @@ async function handleWebhookRequest(
         `An internal error occurred while processing your request.`,
         env
       );
-    } catch (sendError) {
+    } catch (sendError: unknown) {
       console.error("Failed to send error notification to user:", sendError);
     }
     // Still return OK to Telegram to prevent retries for processing errors
@@ -782,10 +774,7 @@ async function handleProcessRequest(
 
     return createJsonResponse({ success: true, result: telegramResult });
   } catch (error: unknown) {
-    const errorMsg =
-      error instanceof Error
-        ? error.message
-        : String(error || "Unknown error processing request");
+    const errorMsg = toError(error, "Unknown error processing request");
     console.error(
       `[${incomingRequestId}] Error processing request:`,
       errorMsg,
