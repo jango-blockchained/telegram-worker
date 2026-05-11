@@ -1,4 +1,3 @@
-import type { Fetcher } from "@cloudflare/workers-types"; // Import Fetcher if used
 import type { KVNamespace } from "@cloudflare/workers-types"; // Import KVNamespace
 import {
   type EnvWithKV,
@@ -9,7 +8,6 @@ import type { Ai } from "@cloudflare/ai"; // Import the Ai type
 import type { VectorizeIndex } from "@cloudflare/workers-types"; // Import VectorizeIndex type
 import type { R2Bucket } from "@cloudflare/workers-types"; // Import R2Bucket type
 import {
-  createErrorResponse,
   Errors,
   createJsonResponse,
 } from "@jango-blockchained/hoox-shared/errors";
@@ -18,14 +16,8 @@ import {
   withRequestLog,
 } from "@jango-blockchained/hoox-shared/middleware";
 import { createRouter } from "@jango-blockchained/hoox-shared/router";
-import type { Handler } from "@jango-blockchained/hoox-shared/types/router";
 import { KVKeys } from "@jango-blockchained/hoox-shared/kvKeys";
-import type {
-  StandardResponse,
-  WebhookPayload,
-  TradeAction,
-  ProcessRequestBody,
-} from "@jango-blockchained/hoox-shared/types";
+import type { ProcessRequestBody } from "@jango-blockchained/hoox-shared/types";
 import { trackAnalytics } from "@jango-blockchained/hoox-shared/analytics";
 import type { AnalyticsEnv } from "@jango-blockchained/hoox-shared/analytics";
 import { healthCheck } from "@jango-blockchained/hoox-shared/health";

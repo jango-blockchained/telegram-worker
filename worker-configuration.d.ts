@@ -6,17 +6,21 @@ declare namespace Cloudflare {
     mainModule: typeof import("./src/index");
   }
   interface Env {
+    /* KV */
     CONFIG_KV: KVNamespace;
+    /* R2 */
     UPLOADS_BUCKET: R2Bucket;
+    /* Vectorize */
     VECTORIZE_INDEX: VectorizeIndex;
+    /* AI */
     AI: Ai;
+    /* Service bindings */
+    ANALYTICS_SERVICE: Fetcher;
+    /* Secrets (vars) */
     INTERNAL_KEY_BINDING: null;
     TG_BOT_TOKEN_BINDING: null;
     TG_CHAT_ID_BINDING: null;
     TELEGRAM_SECRET_TOKEN: null;
-    TELEGRAM_BOT_TOKEN: string;
-    TRADE_SERVICE: Fetcher /* trade-worker */;
-    WEBHOOK_RECEIVER_API: Fetcher /* hoox */;
   }
 }
 interface Env extends Cloudflare.Env {}
