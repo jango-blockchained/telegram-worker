@@ -139,6 +139,20 @@ const createMockEnv = (secrets: {
 
 const PROCESS_ENDPOINT = "/process";
 
+// Mock ExecutionContext with waitUntil for tests
+// Cloudflare Workers ctx.waitUntil returns void, not Promise — the runtime
+// internally extends the worker lifetime. Our mock swallows rejections to
+// match waitUntil's fire-and-forget semantics without floating promises.
+// Guards against non-Promise values (e.g., trackAnalytics returns undefined
+// when ANALYTICS_SERVICE binding is missing).
+const mockCtx = {
+  waitUntil: (p: Promise<any>) => {
+    if (p && typeof p.catch === "function") {
+      p.catch(() => {});
+    }
+  },
+} as any;
+
 describe("Telegram Worker", () => {
   const TEST_INTERNAL_KEY = "test-internal-key";
   const TEST_BOT_TOKEN = "test-bot-token";
@@ -187,7 +201,7 @@ describe("Telegram Worker", () => {
     const response = await telegramWorker.fetch(
       request as any,
       mockEnv as any,
-      {} as ExecutionContext
+      mockCtx
     );
     expect(response.status).toBe(500);
     const responseData = (await response.json()) as { error: string };
@@ -216,7 +230,7 @@ describe("Telegram Worker", () => {
     const response = await telegramWorker.fetch(
       request as any,
       mockEnv as any,
-      {} as ExecutionContext
+      mockCtx
     );
     expect(response.status).toBe(401);
     const responseData = (await response.json()) as { error: string };
@@ -246,7 +260,7 @@ describe("Telegram Worker", () => {
     const response = await telegramWorker.fetch(
       request as any,
       mockEnv as any,
-      {} as ExecutionContext
+      mockCtx
     );
     expect(response.status).toBe(200);
     const responseData = (await response.json()) as { success: boolean };
@@ -279,7 +293,7 @@ describe("Telegram Worker", () => {
     const response = await telegramWorker.fetch(
       request as any,
       mockEnv as any,
-      {} as ExecutionContext
+      mockCtx
     );
     expect(response.status).toBe(200);
     const responseData = (await response.json()) as { success: boolean };
@@ -313,7 +327,7 @@ describe("Telegram Worker", () => {
     const response = await telegramWorker.fetch(
       request as any,
       mockEnv as any,
-      {} as ExecutionContext
+      mockCtx
     );
     expect(response.status).toBe(500);
     const responseData = (await response.json()) as { error: string };
@@ -343,7 +357,7 @@ describe("Telegram Worker", () => {
     const response = await telegramWorker.fetch(
       request as any,
       mockEnv as any,
-      {} as ExecutionContext
+      mockCtx
     );
     expect(response.status).toBe(500);
     const responseData = (await response.json()) as { error: string };
@@ -374,7 +388,7 @@ describe("Telegram Worker", () => {
     const response = await telegramWorker.fetch(
       request as any,
       mockEnv as any,
-      {} as ExecutionContext
+      mockCtx
     );
     expect(response.status).toBe(500);
     const responseData = (await response.json()) as { error: string };
@@ -409,7 +423,7 @@ describe("Telegram Worker", () => {
     const response = await telegramWorker.fetch(
       request as any,
       mockEnv as any,
-      {} as ExecutionContext
+      mockCtx
     );
     expect(response.status).toBe(500);
     const responseData = (await response.json()) as { error: string };
@@ -719,7 +733,7 @@ describe("Telegram Worker Webhook Handler (/webhook)", () => {
     const response = await telegramWorker.fetch(
       request as any,
       mockEnv as any,
-      {} as ExecutionContext
+      mockCtx
     );
     expect(response.status).toBe(401);
     const body = await response.text();
@@ -741,7 +755,7 @@ describe("Telegram Worker Webhook Handler (/webhook)", () => {
     const response = await telegramWorker.fetch(
       request as any,
       mockEnv as any,
-      {} as ExecutionContext
+      mockCtx
     );
     expect(response.status).toBe(401);
     const body = await response.text();
@@ -769,7 +783,7 @@ describe("Telegram Worker Webhook Handler (/webhook)", () => {
     const response = await telegramWorker.fetch(
       request as any,
       mockEnv as any,
-      {} as ExecutionContext
+      mockCtx
     );
     expect(response.status).toBe(401);
     const body = await response.text();
@@ -805,7 +819,7 @@ describe("Telegram Worker Webhook Handler (/webhook)", () => {
     const response = await telegramWorker.fetch(
       request as any,
       mockEnv as any,
-      {} as ExecutionContext
+      mockCtx
     );
     expect(response.status).toBe(200);
     await new Promise((resolve) => setTimeout(resolve, 0));

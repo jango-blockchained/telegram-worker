@@ -193,7 +193,9 @@ export async function insertEmbeddings(
     logger.info("Vectorize insertion successful", { result: insertResult });
   } catch (error: unknown) {
     const errorMsg = toError(error, "Unknown Vectorize error");
-    logger.error("Error inserting embeddings into Vectorize", { error: errorMsg });
+    logger.error("Error inserting embeddings into Vectorize", {
+      error: errorMsg,
+    });
     throw new Error(`Failed to insert embeddings: ${errorMsg}`, {
       cause: error,
     });
@@ -322,13 +324,15 @@ async function sendTelegramNotification(
   logger.info(`[${requestId}] Telegram API Success Response:`, responseData);
 
   // Track notification analytics (non-blocking)
-  ctx.waitUntil(trackAnalytics(env, "/track/notification", {
-    data: {
-      type: "telegram",
-      target: chatId,
-      success: response.ok,
-    },
-  }));
+  ctx.waitUntil(
+    trackAnalytics(env, "/track/notification", {
+      data: {
+        type: "telegram",
+        target: chatId,
+        success: response.ok,
+      },
+    })
+  );
 
   return responseData;
 }
@@ -383,7 +387,9 @@ export async function handleGetLatestTradeSignalR2(
     );
     return objectBody as any;
   } catch (error: unknown) {
-    logger.error("Error fetching latest trade signal from R2", { error: toError(error) });
+    logger.error("Error fetching latest trade signal from R2", {
+      error: toError(error),
+    });
     return null;
   }
 }
@@ -425,7 +431,11 @@ async function sendTelegramReply(
     const responseBody = await response.json();
 
     if (!response.ok) {
-      logger.error("Error sending Telegram reply", { status: response.status, statusText: response.statusText, body: responseBody });
+      logger.error("Error sending Telegram reply", {
+        status: response.status,
+        statusText: response.statusText,
+        body: responseBody,
+      });
       // Don't return the internal error details to the webhook caller
       return createJsonResponse(
         { success: false, error: "Failed to send reply" },
@@ -438,7 +448,9 @@ async function sendTelegramReply(
     // The response here is mainly for the worker's fetch caller, not Telegram itself.
     return createJsonResponse({ success: true, result: responseBody }, 200);
   } catch (error: unknown) {
-    logger.error("Network error sending Telegram reply", { error: toError(error) });
+    logger.error("Network error sending Telegram reply", {
+      error: toError(error),
+    });
     return createJsonResponse(
       { success: false, error: "Network error sending reply" },
       500
@@ -469,7 +481,9 @@ async function handleWebhookRequest(
     update = await request.json();
     logger.info("Received Telegram update", { update });
   } catch (error: unknown) {
-    logger.error("Failed to parse Telegram update JSON", { error: toError(error) });
+    logger.error("Failed to parse Telegram update JSON", {
+      error: toError(error),
+    });
     return new Response("Bad Request: Invalid JSON", { status: 400 });
   }
 
@@ -544,7 +558,9 @@ async function handleWebhookRequest(
             env
           );
         } catch (parseError: unknown) {
-          logger.error("Failed to parse latest signal JSON", { error: toError(parseError) });
+          logger.error("Failed to parse latest signal JSON", {
+            error: toError(parseError),
+          });
           await sendTelegramReply(
             chatId,
             "Error: Could not read the latest signal data.",
@@ -578,7 +594,9 @@ async function handleWebhookRequest(
         try {
           searchResults = await queryEmbeddings(question, env, 5); // Get top 5 contexts
         } catch (vectorError: unknown) {
-          logger.error("Error querying Vectorize during /ask", { error: toError(vectorError) });
+          logger.error("Error querying Vectorize during /ask", {
+            error: toError(vectorError),
+          });
           await sendTelegramReply(
             chatId,
             "Sorry, I encountered an error searching the message history\\. Please try again later\\.",
@@ -639,7 +657,9 @@ async function handleWebhookRequest(
               ],
             });
           } catch (aiError: unknown) {
-            logger.error("Error calling AI during /ask", { error: toError(aiError) });
+            logger.error("Error calling AI during /ask", {
+              error: toError(aiError),
+            });
             await sendTelegramReply(
               chatId,
               "Sorry, I encountered an error asking the AI\\. Please try again later\\.",
@@ -683,7 +703,9 @@ async function handleWebhookRequest(
     // Respond OK to Telegram webhook immediately after queuing the reply/processing
     return new Response("OK", { status: 200 });
   } catch (error: unknown) {
-    logger.error("Error processing Telegram message", { error: toError(error) });
+    logger.error("Error processing Telegram message", {
+      error: toError(error),
+    });
     // Try to send an error message back to the user if possible
     try {
       await sendTelegramReply(
@@ -692,7 +714,9 @@ async function handleWebhookRequest(
         env
       );
     } catch (sendError: unknown) {
-      logger.error("Failed to send error notification to user", { error: toError(sendError) });
+      logger.error("Failed to send error notification to user", {
+        error: toError(sendError),
+      });
     }
     // Still return OK to Telegram to prevent retries for processing errors
     return new Response("OK", { status: 200 });
@@ -757,7 +781,9 @@ async function handleProcessRequest(
     return createJsonResponse({ success: true, result: telegramResult });
   } catch (error: unknown) {
     const errorMsg = toError(error, "Unknown error processing request");
-    logger.error(`[${incomingRequestId}] Error processing request`, { error: errorMsg });
+    logger.error(`[${incomingRequestId}] Error processing request`, {
+      error: errorMsg,
+    });
     return createJsonResponse({ success: false, error: errorMsg }, 500);
   }
 }
