@@ -17,10 +17,10 @@ declare namespace Cloudflare {
     /* Service bindings */
     ANALYTICS_SERVICE: Fetcher;
     /* Secrets (vars) */
-    INTERNAL_KEY_BINDING: null;
-    TG_BOT_TOKEN_BINDING: null;
-    TG_CHAT_ID_BINDING: null;
-    TELEGRAM_SECRET_TOKEN: null;
+    INTERNAL_KEY_BINDING: string;
+    TG_BOT_TOKEN_BINDING: string;
+    TG_CHAT_ID_BINDING: string;
+    TELEGRAM_SECRET_TOKEN: string;
   }
 }
 interface Env extends Cloudflare.Env {}

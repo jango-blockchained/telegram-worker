@@ -17,6 +17,6 @@
     "types": ["@cloudflare/workers-types"],
     "ignoreDeprecations": "5.0"
   },
-  "include": ["src/**/*"],
+  "include": ["src/**/*", "worker-configuration.d.ts"],
   "exclude": ["node_modules", "dist", "test"]
 }

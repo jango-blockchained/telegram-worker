@@ -1,9 +1,8 @@
 import type { KVNamespace } from "@cloudflare/workers-types"; // Import KVNamespace
 import {
   type EnvWithKV,
-  kvTimestampMiddleware,
   logKvTimestamp,
-} from "../../../packages/shared/src/kvUtils"; // Import shared function and Env type
+} from "../../../packages/shared/src/kvUtils"; // Import shared function
 import type { Ai } from "@cloudflare/ai"; // Import the Ai type
 import type { VectorizeIndex } from "@cloudflare/workers-types"; // Import VectorizeIndex type
 import type { R2Bucket } from "@cloudflare/workers-types"; // Import R2Bucket type
@@ -20,23 +19,12 @@ import { createRouter } from "@jango-blockchained/hoox-shared/router";
 import { KVKeys } from "@jango-blockchained/hoox-shared/kvKeys";
 import type { ProcessRequestBody } from "@jango-blockchained/hoox-shared/types";
 import { trackAnalytics } from "@jango-blockchained/hoox-shared/analytics";
-import type { AnalyticsEnv } from "@jango-blockchained/hoox-shared/analytics";
 import { healthCheck } from "@jango-blockchained/hoox-shared/health";
 
 // --- Type Definitions ---
 
-interface Env extends EnvWithKV, AnalyticsEnv {
-  // Secrets bindings
-  INTERNAL_KEY_BINDING?: string;
-  TG_BOT_TOKEN_BINDING: string;
-  TELEGRAM_SECRET_TOKEN?: string;
-  // Fallbacks/Options
-  TG_CHAT_ID_BINDING?: string;
-  AI: Ai;
-  VECTORIZE_INDEX: VectorizeIndex;
-  ENABLE_DEBUG_ENDPOINTS?: string;
-  CONFIG_KV: KVNamespace;
-  UPLOADS_BUCKET: R2Bucket;
+interface Env extends Cloudflare.Env {
+  [key: string]: unknown;
 }
 
 // Payload structure for incoming requests (both /process and /webhook)
@@ -96,15 +84,15 @@ router.get(
 router.post(
   PROCESS_ENDPOINT,
   async (request: Request, env: Env, ctx: ExecutionContext) => {
-    await logKvTimestamp(env);
-    return await handleProcessRequest(request, env);
+    ctx.waitUntil(logKvTimestamp(env as unknown as EnvWithKV));
+    return await handleProcessRequest(request, env, ctx);
   }
 );
 
 router.post(
   WEBHOOK_ENDPOINT,
   async (request: Request, env: Env, ctx: ExecutionContext) => {
-    await logKvTimestamp(env);
+    ctx.waitUntil(logKvTimestamp(env as unknown as EnvWithKV));
     return await handleWebhookRequest(request, env);
   }
 );
@@ -132,30 +120,30 @@ export async function generateEmbeddings(
   env: Env
 ): Promise<number[][]> {
   if (!env.AI) {
-    console.error("AI binding is not configured in the environment.");
+    logger.error("AI binding is not configured in the environment.");
     throw new Error("AI service not available.");
   }
 
   try {
-    console.log(`Generating embeddings for input text...`);
+    logger.info(`Generating embeddings for input text...`);
     const response: any = await env.AI.run("@cf/baai/bge-base-en-v1.5", {
       text,
     });
 
     // Assuming the response structure contains a 'data' field with the embeddings
     if (!response || !response.data || !Array.isArray(response.data)) {
-      console.error(
+      logger.error(
         "Invalid response structure from AI embedding model:",
         response
       );
       throw new Error("Failed to parse embeddings from AI response.");
     }
 
-    console.log(`Successfully generated ${response.data.length} embedding(s).`);
+    logger.info(`Successfully generated ${response.data.length} embedding(s).`);
     return response.data;
   } catch (error: unknown) {
     const errorMsg = toError(error, "Unknown AI error");
-    console.error("Error generating embeddings:", errorMsg, error);
+    logger.error("Error generating embeddings", { error: errorMsg });
     throw new Error(`Failed to generate embeddings: ${errorMsg}`, {
       cause: error,
     });
@@ -179,7 +167,7 @@ export async function insertEmbeddings(
   }
 
   if (!env.VECTORIZE_INDEX) {
-    console.error(
+    logger.error(
       "VECTORIZE_INDEX binding is not configured in the environment."
     );
     throw new Error("Vectorize service not available.");
@@ -193,23 +181,19 @@ export async function insertEmbeddings(
   }));
 
   if (dataToInsert.length === 0) {
-    console.log("No data to insert into Vectorize.");
+    logger.info("No data to insert into Vectorize.");
     return;
   }
 
   try {
-    console.log(
+    logger.info(
       `Inserting ${dataToInsert.length} vector(s) into Vectorize index...`
     );
     const insertResult = await env.VECTORIZE_INDEX.insert(dataToInsert);
-    console.log("Vectorize insertion successful:", insertResult);
+    logger.info("Vectorize insertion successful", { result: insertResult });
   } catch (error: unknown) {
     const errorMsg = toError(error, "Unknown Vectorize error");
-    console.error(
-      "Error inserting embeddings into Vectorize:",
-      errorMsg,
-      error
-    );
+    logger.error("Error inserting embeddings into Vectorize", { error: errorMsg });
     throw new Error(`Failed to insert embeddings: ${errorMsg}`, {
       cause: error,
     });
@@ -230,17 +214,17 @@ export async function queryEmbeddings(
   topK: number = 3
 ): Promise<VectorizeMatches> {
   if (!env.VECTORIZE_INDEX) {
-    console.error("VECTORIZE_INDEX binding is not configured.");
+    logger.error("VECTORIZE_INDEX binding is not configured.");
     throw new Error("Vectorize service not available.");
   }
   if (!env.AI) {
-    console.error("AI binding is not configured.");
+    logger.error("AI binding is not configured.");
     throw new Error("AI service not available for query embedding.");
   }
 
   try {
     // 1. Generate embedding for the query text
-    console.log(`Generating embedding for query: "${queryText}"...`);
+    logger.info(`Generating embedding for query: "${queryText}"...`);
     const queryEmbedding = (await generateEmbeddings(queryText, env))[0]; // Expecting a single vector back
 
     if (!queryEmbedding) {
@@ -248,17 +232,17 @@ export async function queryEmbeddings(
     }
 
     // 2. Query Vectorize
-    console.log(`Querying Vectorize index with topK=${topK}...`);
+    logger.info(`Querying Vectorize index with topK=${topK}...`);
     const results = await env.VECTORIZE_INDEX.query(queryEmbedding, {
       topK,
       returnMetadata: true,
     });
-    console.log(`Vectorize query found ${results.matches.length} match(es).`);
+    logger.info(`Vectorize query found ${results.matches.length} match(es).`);
 
     return results;
   } catch (error: unknown) {
     const errorMsg = toError(error, "Unknown query error");
-    console.error("Error querying embeddings:", errorMsg, error);
+    logger.error("Error querying embeddings", { error: errorMsg });
     // Re-throw the error to be handled by the caller
     throw new Error(`Failed to query embeddings: ${errorMsg}`, {
       cause: error,
@@ -276,11 +260,12 @@ export async function queryEmbeddings(
 async function sendTelegramNotification(
   payload: NotificationPayload,
   env: Env,
+  ctx: ExecutionContext,
   requestId?: string
 ): Promise<any> {
   const botToken = env.TG_BOT_TOKEN_BINDING;
   if (!botToken) {
-    console.error(`[${requestId}] TG_BOT_TOKEN_BINDING secret not configured.`);
+    logger.error(`[${requestId}] TG_BOT_TOKEN_BINDING secret not configured.`);
     throw new Error("Telegram bot token not configured.");
   }
 
@@ -297,20 +282,20 @@ async function sendTelegramNotification(
     ]);
 
   if (!botEnabled) {
-    console.log(`[${requestId}] Telegram notifications disabled via KV config`);
+    logger.info(`[${requestId}] Telegram notifications disabled via KV config`);
     return { success: true, skipped: true, reason: "bot disabled" };
   }
 
   const chatId = payload.chatId || defaultChatId;
 
   if (!chatId) {
-    console.error(`[${requestId}] Chat ID missing and default not configured.`);
+    logger.error(`[${requestId}] Chat ID missing and default not configured.`);
     throw new Error("Chat ID configuration error");
   }
 
   const telegramApiUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
 
-  console.log(`[${requestId}] Sending message to chat ID ${chatId}`);
+  logger.info(`[${requestId}] Sending message to chat ID ${chatId}`);
 
   const response = await fetch(telegramApiUrl, {
     method: "POST",
@@ -328,22 +313,22 @@ async function sendTelegramNotification(
   const responseData = (await response.json()) as any;
 
   if (!response.ok) {
-    console.error(`[${requestId}] Telegram API Error:`, responseData);
+    logger.error(`[${requestId}] Telegram API Error:`, responseData);
     throw new Error(
       `Telegram API request failed (${response.status}): ${responseData.description || "Unknown error"}`
     );
   }
 
-  console.log(`[${requestId}] Telegram API Success Response:`, responseData);
+  logger.info(`[${requestId}] Telegram API Success Response:`, responseData);
 
   // Track notification analytics (non-blocking)
-  trackAnalytics(env, "/track/notification", {
+  ctx.waitUntil(trackAnalytics(env, "/track/notification", {
     data: {
       type: "telegram",
       target: chatId,
       success: response.ok,
     },
-  });
+  }));
 
   return responseData;
 }
@@ -359,12 +344,12 @@ export async function handleGetLatestTradeSignalR2(
   env: Env
 ): Promise<R2ObjectBody | null> {
   if (!env.UPLOADS_BUCKET) {
-    console.error("R2_BUCKET binding is not configured.");
+    logger.error("R2_BUCKET binding is not configured.");
     return null;
   }
 
   try {
-    console.log("Listing objects in R2 bucket...");
+    logger.info("Listing objects in R2 bucket...");
     // List objects, assuming keys are sortable (e.g., timestamp-based)
     const listed = await env.UPLOADS_BUCKET.list({
       limit: 1, // We only need the latest one
@@ -377,28 +362,28 @@ export async function handleGetLatestTradeSignalR2(
     });
 
     if (listed.objects.length === 0) {
-      console.log("No objects found in R2 bucket.");
+      logger.info("No objects found in R2 bucket.");
       return null;
     }
 
     // Assuming the first object in the default sort is the latest (adjust if needed)
     const latestObject = listed.objects[0];
-    console.log(`Found latest object: ${latestObject.key}`);
+    logger.info(`Found latest object: ${latestObject.key}`);
 
     const objectBody = await env.UPLOADS_BUCKET.get(latestObject.key);
     if (objectBody === null) {
-      console.error(
+      logger.error(
         `Failed to retrieve object body for key: ${latestObject.key}`
       );
       return null;
     }
 
-    console.log(
+    logger.info(
       `Successfully retrieved object body for key: ${latestObject.key}`
     );
     return objectBody as any;
   } catch (error: unknown) {
-    console.error("Error fetching latest trade signal from R2:", error);
+    logger.error("Error fetching latest trade signal from R2", { error: toError(error) });
     return null;
   }
 }
@@ -416,7 +401,7 @@ async function sendTelegramReply(
 ): Promise<Response> {
   const botToken = env.TG_BOT_TOKEN_BINDING;
   if (!botToken) {
-    console.error("Telegram Bot Token is not configured.");
+    logger.error("Telegram Bot Token is not configured.");
     return createJsonResponse(
       { success: false, error: "Bot token not configured" },
       500
@@ -440,12 +425,7 @@ async function sendTelegramReply(
     const responseBody = await response.json();
 
     if (!response.ok) {
-      console.error(
-        "Error sending Telegram reply:",
-        response.status,
-        response.statusText,
-        responseBody
-      );
+      logger.error("Error sending Telegram reply", { status: response.status, statusText: response.statusText, body: responseBody });
       // Don't return the internal error details to the webhook caller
       return createJsonResponse(
         { success: false, error: "Failed to send reply" },
@@ -453,12 +433,12 @@ async function sendTelegramReply(
       );
     }
 
-    console.log("Successfully sent Telegram reply.");
+    logger.info("Successfully sent Telegram reply.");
     // Telegram webhook expects a 200 OK even if the reply send had issues downstream.
     // The response here is mainly for the worker's fetch caller, not Telegram itself.
     return createJsonResponse({ success: true, result: responseBody }, 200);
   } catch (error: unknown) {
-    console.error("Network error sending Telegram reply:", error);
+    logger.error("Network error sending Telegram reply", { error: toError(error) });
     return createJsonResponse(
       { success: false, error: "Network error sending reply" },
       500
@@ -479,7 +459,7 @@ async function handleWebhookRequest(
   const receivedToken = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
 
   if (secretToken && receivedToken !== secretToken) {
-    console.warn("Invalid or missing Telegram secret token received.");
+    logger.warn("Invalid or missing Telegram secret token received.");
     return new Response("Unauthorized", { status: 401 });
   }
 
@@ -487,9 +467,9 @@ async function handleWebhookRequest(
   let update: any;
   try {
     update = await request.json();
-    console.log("Received Telegram update:", JSON.stringify(update, null, 2));
+    logger.info("Received Telegram update", { update });
   } catch (error: unknown) {
-    console.error("Failed to parse Telegram update JSON:", error);
+    logger.error("Failed to parse Telegram update JSON", { error: toError(error) });
     return new Response("Bad Request: Invalid JSON", { status: 400 });
   }
 
@@ -503,7 +483,7 @@ async function handleWebhookRequest(
     !message.chat.id ||
     !message.message_id
   ) {
-    console.log(
+    logger.info(
       "Received update without a usable message/chat context. Skipping."
     );
     // Acknowledge Telegram successfully, even if we don't process it
@@ -526,7 +506,7 @@ async function handleWebhookRequest(
           env
         );
       } else {
-        console.log(`Processing /search command with query: "${query}"`);
+        logger.info(`Processing /search command with query: "${query}"`);
         const searchResults = await queryEmbeddings(query, env, 5); // Get top 5 results
 
         let replyText = `Found ${searchResults.matches.length} results for "_${query}_":\n\n`;
@@ -548,7 +528,7 @@ async function handleWebhookRequest(
         await sendTelegramReply(chatId, replyText, env);
       }
     } else if (messageText === "/latest") {
-      console.log("Processing /latest command...");
+      logger.info("Processing /latest command...");
       const latestSignalObject = await handleGetLatestTradeSignalR2(env);
       if (latestSignalObject) {
         try {
@@ -564,7 +544,7 @@ async function handleWebhookRequest(
             env
           );
         } catch (parseError: unknown) {
-          console.error("Failed to parse latest signal JSON:", parseError);
+          logger.error("Failed to parse latest signal JSON", { error: toError(parseError) });
           await sendTelegramReply(
             chatId,
             "Error: Could not read the latest signal data.",
@@ -587,7 +567,7 @@ async function handleWebhookRequest(
           env
         );
       } else {
-        console.log(`Processing /ask command with question: "${question}"`);
+        logger.info(`Processing /ask command with question: "${question}"`);
         await sendTelegramReply(
           chatId,
           `_Searching message history for context related to "${question}".`,
@@ -598,7 +578,7 @@ async function handleWebhookRequest(
         try {
           searchResults = await queryEmbeddings(question, env, 5); // Get top 5 contexts
         } catch (vectorError: unknown) {
-          console.error("Error querying Vectorize during /ask:", vectorError);
+          logger.error("Error querying Vectorize during /ask", { error: toError(vectorError) });
           await sendTelegramReply(
             chatId,
             "Sorry, I encountered an error searching the message history\\. Please try again later\\.",
@@ -646,7 +626,7 @@ async function handleWebhookRequest(
             `_Found ${limitedContext.length} relevant message snippets\\! Asking the AI\\.\\.\\._`,
             env
           ); // Send feedback
-          console.log(
+          logger.info(
             `Sending RAG prompt to AI (Context length: ${currentLength} chars):\nSystem: ${systemPrompt}\nUser: ${userPrompt}`
           );
 
@@ -659,7 +639,7 @@ async function handleWebhookRequest(
               ],
             });
           } catch (aiError: unknown) {
-            console.error("Error calling AI during /ask:", aiError);
+            logger.error("Error calling AI during /ask", { error: toError(aiError) });
             await sendTelegramReply(
               chatId,
               "Sorry, I encountered an error asking the AI\\. Please try again later\\.",
@@ -684,7 +664,7 @@ async function handleWebhookRequest(
       }
     } else {
       // Default: Treat as text to be indexed
-      console.log(`Indexing message: "${messageText}"`);
+      logger.info(`Indexing message: "${messageText}"`);
       const embeddings = await generateEmbeddings(messageText, env);
       const metadata: TelegramMessageMetadata = {
         messageId: messageId,
@@ -703,7 +683,7 @@ async function handleWebhookRequest(
     // Respond OK to Telegram webhook immediately after queuing the reply/processing
     return new Response("OK", { status: 200 });
   } catch (error: unknown) {
-    console.error("Error processing Telegram message:", error);
+    logger.error("Error processing Telegram message", { error: toError(error) });
     // Try to send an error message back to the user if possible
     try {
       await sendTelegramReply(
@@ -712,7 +692,7 @@ async function handleWebhookRequest(
         env
       );
     } catch (sendError: unknown) {
-      console.error("Failed to send error notification to user:", sendError);
+      logger.error("Failed to send error notification to user", { error: toError(sendError) });
     }
     // Still return OK to Telegram to prevent retries for processing errors
     return new Response("OK", { status: 200 });
@@ -724,7 +704,8 @@ async function handleWebhookRequest(
  */
 async function handleProcessRequest(
   request: Request,
-  env: Env
+  env: Env,
+  ctx: ExecutionContext
 ): Promise<Response> {
   let incomingRequestId = "unknown";
 
@@ -733,12 +714,12 @@ async function handleProcessRequest(
     incomingRequestId = data?.requestId || crypto.randomUUID();
     const internalAuthKey = data?.internalAuthKey;
 
-    console.log(`Processing legacy Telegram request ID: ${incomingRequestId}`);
+    logger.info(`Processing legacy Telegram request ID: ${incomingRequestId}`);
 
     // --- Authenticate ---
     const expectedInternalKey = env.INTERNAL_KEY_BINDING;
     if (!expectedInternalKey) {
-      console.error(
+      logger.error(
         `[${incomingRequestId}] INTERNAL_KEY_BINDING secret not configured.`
       );
       return createJsonResponse(
@@ -747,7 +728,7 @@ async function handleProcessRequest(
       );
     }
     if (!internalAuthKey || internalAuthKey !== expectedInternalKey) {
-      console.warn(`[${incomingRequestId}] Authentication failed.`);
+      logger.warn(`[${incomingRequestId}] Authentication failed.`);
       return createJsonResponse(
         { success: false, error: "Authentication failed" },
         401
@@ -757,7 +738,7 @@ async function handleProcessRequest(
     // --- Process ---
     const payload = data.payload;
     if (!payload || !payload.message) {
-      console.warn(
+      logger.warn(
         `[${incomingRequestId}] Missing message in process request payload.`
       );
       return createJsonResponse(
@@ -769,17 +750,14 @@ async function handleProcessRequest(
     const telegramResult = await sendTelegramNotification(
       payload,
       env,
+      ctx,
       incomingRequestId
     );
 
     return createJsonResponse({ success: true, result: telegramResult });
   } catch (error: unknown) {
     const errorMsg = toError(error, "Unknown error processing request");
-    console.error(
-      `[${incomingRequestId}] Error processing request:`,
-      errorMsg,
-      error
-    );
+    logger.error(`[${incomingRequestId}] Error processing request`, { error: errorMsg });
     return createJsonResponse({ success: false, error: errorMsg }, 500);
   }
 }
