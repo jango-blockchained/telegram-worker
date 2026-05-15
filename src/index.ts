@@ -14,6 +14,7 @@ import {
 import {
   createLogger,
   withRequestLog,
+  requireInternalAuth,
 } from "@jango-blockchained/hoox-shared/middleware";
 import { createRouter } from "@jango-blockchained/hoox-shared/router";
 import { KVKeys } from "@jango-blockchained/hoox-shared/kvKeys";
@@ -408,10 +409,7 @@ async function sendTelegramReply(
   const botToken = env.TG_BOT_TOKEN_BINDING;
   if (!botToken) {
     logger.error("Telegram Bot Token is not configured.");
-    return createJsonResponse(
-      { success: false, error: "Bot token not configured" },
-      500
-    );
+    return Errors.internal("Bot token not configured");
   }
 
   const apiUrl = `https://api.telegram.org/bot${botToken}/sendMessage`;
@@ -437,10 +435,7 @@ async function sendTelegramReply(
         body: responseBody,
       });
       // Don't return the internal error details to the webhook caller
-      return createJsonResponse(
-        { success: false, error: "Failed to send reply" },
-        502
-      );
+      return Errors.internal("Failed to send reply");
     }
 
     logger.info("Successfully sent Telegram reply.");
@@ -451,10 +446,7 @@ async function sendTelegramReply(
     logger.error("Network error sending Telegram reply", {
       error: toError(error),
     });
-    return createJsonResponse(
-      { success: false, error: "Network error sending reply" },
-      500
-    );
+    return Errors.internal("Network error sending reply");
   }
 }
 
@@ -472,7 +464,7 @@ async function handleWebhookRequest(
 
   if (secretToken && receivedToken !== secretToken) {
     logger.warn("Invalid or missing Telegram secret token received.");
-    return new Response("Unauthorized", { status: 401 });
+    return Errors.unauthorized();
   }
 
   // 2. Parse Telegram Update
@@ -484,7 +476,7 @@ async function handleWebhookRequest(
     logger.error("Failed to parse Telegram update JSON", {
       error: toError(error),
     });
-    return new Response("Bad Request: Invalid JSON", { status: 400 });
+    return Errors.badRequest("Invalid JSON");
   }
 
   // Extract message details (simplified, assumes a message exists)
@@ -734,30 +726,16 @@ async function handleProcessRequest(
   let incomingRequestId = "unknown";
 
   try {
+    const authError = requireInternalAuth(request, env, "INTERNAL_KEY_BINDING");
+    if (authError) {
+      logger.warn(`[${incomingRequestId}] Authentication failed.`);
+      return authError;
+    }
+
     const data: TelegramProcessRequestBody = await request.json();
     incomingRequestId = data?.requestId || crypto.randomUUID();
-    const internalAuthKey = data?.internalAuthKey;
 
     logger.info(`Processing legacy Telegram request ID: ${incomingRequestId}`);
-
-    // --- Authenticate ---
-    const expectedInternalKey = env.INTERNAL_KEY_BINDING;
-    if (!expectedInternalKey) {
-      logger.error(
-        `[${incomingRequestId}] INTERNAL_KEY_BINDING secret not configured.`
-      );
-      return createJsonResponse(
-        { success: false, error: "Service configuration error" },
-        500
-      );
-    }
-    if (!internalAuthKey || internalAuthKey !== expectedInternalKey) {
-      logger.warn(`[${incomingRequestId}] Authentication failed.`);
-      return createJsonResponse(
-        { success: false, error: "Authentication failed" },
-        401
-      );
-    }
 
     // --- Process ---
     const payload = data.payload;
@@ -765,10 +743,7 @@ async function handleProcessRequest(
       logger.warn(
         `[${incomingRequestId}] Missing message in process request payload.`
       );
-      return createJsonResponse(
-        { success: false, error: "Missing message in payload" },
-        400
-      );
+      return Errors.badRequest("Missing message in payload");
     }
 
     const telegramResult = await sendTelegramNotification(
@@ -784,6 +759,6 @@ async function handleProcessRequest(
     logger.error(`[${incomingRequestId}] Error processing request`, {
       error: errorMsg,
     });
-    return createJsonResponse({ success: false, error: errorMsg }, 500);
+    return Errors.internal(errorMsg);
   }
 }
