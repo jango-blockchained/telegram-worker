@@ -11,10 +11,10 @@ import {
   createJsonResponse,
   toError,
 } from "@jango-blockchained/hoox-shared/errors";
+import type { AnalyticsEnv } from "@jango-blockchained/hoox-shared/analytics";
 import {
   createLogger,
   withRequestLog,
-  requireInternalAuth,
 } from "@jango-blockchained/hoox-shared/middleware";
 import { createRouter } from "@jango-blockchained/hoox-shared/router";
 import { KVKeys } from "@jango-blockchained/hoox-shared/kvKeys";
@@ -24,7 +24,7 @@ import { healthCheck } from "@jango-blockchained/hoox-shared/health";
 
 // --- Type Definitions ---
 
-interface Env extends Cloudflare.Env {
+export interface Env extends Cloudflare.Env, AnalyticsEnv {
   [key: string]: unknown;
 }
 
