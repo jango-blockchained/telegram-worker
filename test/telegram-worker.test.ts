@@ -203,9 +203,11 @@ describe("Telegram Worker", () => {
       mockEnv as any,
       mockCtx
     );
-    expect(response.status).toBe(500);
+    // INTERNAL_KEY_BINDING is null → requireInternalAuth rejects with 401
+    // The middleware response uses the key name in the error message
+    expect(response.status).toBe(401);
     const responseData = (await response.json()) as { error: string };
-    expect(responseData.error).toContain("Service configuration error");
+    expect(responseData.error).toContain("not configured");
   });
 
   test("rejects request if internalAuthKey doesn't match secret", async () => {
@@ -234,7 +236,8 @@ describe("Telegram Worker", () => {
     );
     expect(response.status).toBe(401);
     const responseData = (await response.json()) as { error: string };
-    expect(responseData.error).toContain("Authentication failed");
+    // Header-based auth returns "Unauthorized" before body-level auth check
+    expect(responseData.error).toContain("Unauthorized");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -249,7 +252,10 @@ describe("Telegram Worker", () => {
       `https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Auth-Key": TEST_INTERNAL_KEY,
+        },
         body: JSON.stringify({
           payload: validNotification,
           internalAuthKey: TEST_INTERNAL_KEY,
@@ -282,7 +288,10 @@ describe("Telegram Worker", () => {
       `https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Auth-Key": TEST_INTERNAL_KEY,
+        },
         body: JSON.stringify({
           payload: validNotificationDefaultChat,
           internalAuthKey: TEST_INTERNAL_KEY,
@@ -300,6 +309,7 @@ describe("Telegram Worker", () => {
     expect(responseData.success).toBe(true);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const fetchCallArgs = fetchMock.mock.calls[0];
+    expect(fetchCallArgs[0]).toContain(TEST_BOT_TOKEN);
     const fetchBody = JSON.parse(fetchCallArgs[1].body);
     expect(fetchBody.chat_id).toBe(TEST_CHAT_ID);
     expect(fetchBody.text).toBe(validNotificationDefaultChat.message);
@@ -316,7 +326,10 @@ describe("Telegram Worker", () => {
       `https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Auth-Key": TEST_INTERNAL_KEY,
+        },
         body: JSON.stringify({
           payload: validNotificationDefaultChat,
           internalAuthKey: TEST_INTERNAL_KEY,
@@ -346,7 +359,10 @@ describe("Telegram Worker", () => {
       `https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Auth-Key": TEST_INTERNAL_KEY,
+        },
         body: JSON.stringify({
           payload: validNotification,
           internalAuthKey: TEST_INTERNAL_KEY,
@@ -377,7 +393,10 @@ describe("Telegram Worker", () => {
       `https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Auth-Key": TEST_INTERNAL_KEY,
+        },
         body: JSON.stringify({
           payload: validNotification,
           internalAuthKey: TEST_INTERNAL_KEY,
@@ -412,7 +431,10 @@ describe("Telegram Worker", () => {
       `https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Auth-Key": TEST_INTERNAL_KEY,
+        },
         body: JSON.stringify({
           payload: validNotification,
           internalAuthKey: TEST_INTERNAL_KEY,
@@ -736,8 +758,8 @@ describe("Telegram Worker Webhook Handler (/webhook)", () => {
       mockCtx
     );
     expect(response.status).toBe(401);
-    const body = await response.text();
-    expect(body).toBe("Unauthorized");
+    const body = (await response.json()) as any;
+    expect(body.error).toBe("Unauthorized");
   });
 
   test("should reject request if webhook secret in header is incorrect", async () => {
@@ -758,8 +780,8 @@ describe("Telegram Worker Webhook Handler (/webhook)", () => {
       mockCtx
     );
     expect(response.status).toBe(401);
-    const body = await response.text();
-    expect(body).toBe("Unauthorized");
+    const body = (await response.json()) as any;
+    expect(body.error).toBe("Unauthorized");
   });
 
   test("should reject request if webhook secret does not match", async () => {
@@ -786,8 +808,8 @@ describe("Telegram Worker Webhook Handler (/webhook)", () => {
       mockCtx
     );
     expect(response.status).toBe(401);
-    const body = await response.text();
-    expect(body).toBe("Unauthorized");
+    const body = (await response.json()) as any;
+    expect(body.error).toBe("Unauthorized");
   });
 
   test("should process valid text message and generate/insert embeddings", async () => {

@@ -14,6 +14,7 @@ import {
 import type { AnalyticsEnv } from "@jango-blockchained/hoox-shared/analytics";
 import {
   createLogger,
+  requireInternalAuth,
   withRequestLog,
 } from "@jango-blockchained/hoox-shared/middleware";
 import { createRouter } from "@jango-blockchained/hoox-shared/router";
