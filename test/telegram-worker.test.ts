@@ -335,7 +335,7 @@ describe("Telegram Worker", () => {
     );
     expect(response.status).toBe(500);
     const responseData = (await response.json()) as { error: string };
-    expect(responseData.error).toContain("Chat ID configuration error");
+    expect(responseData.error).toContain("Telegram chatId not configured");
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -490,12 +490,33 @@ describe("Telegram Worker Helpers", () => {
   ) => Promise<any>;
   let handleGetLatestTradeSignalR2Fn: (env: any) => Promise<any | null>;
 
+  // Mock logger for testing
+  const mockLogger = {
+    info: mock(),
+    error: mock(),
+    warn: mock(),
+    debug: mock(),
+  };
+
   beforeAll(async () => {
     const module = await import("../src/index.js");
-    generateEmbeddingsFn = module.generateEmbeddings;
-    insertEmbeddingsFn = module.insertEmbeddings;
-    queryEmbeddingsFn = module.queryEmbeddings;
-    handleGetLatestTradeSignalR2Fn = module.handleGetLatestTradeSignalR2;
+    // Wrap all functions to provide the logger
+    const originalGenerateEmbeddings = module.generateEmbeddings;
+    generateEmbeddingsFn = (text: string | string[], env: any) =>
+      originalGenerateEmbeddings(text, env, mockLogger);
+
+    const originalInsertEmbeddings = module.insertEmbeddings;
+    insertEmbeddingsFn = (vectors: number[][], metadata: any[], env: any) =>
+      originalInsertEmbeddings(vectors, metadata, env, mockLogger);
+
+    const originalQueryEmbeddings = module.queryEmbeddings;
+    queryEmbeddingsFn = (queryText: string, env: any, topK?: number) =>
+      originalQueryEmbeddings(queryText, env, mockLogger, topK);
+
+    const originalHandleGetLatestTradeSignalR2 =
+      module.handleGetLatestTradeSignalR2;
+    handleGetLatestTradeSignalR2Fn = (env: any) =>
+      originalHandleGetLatestTradeSignalR2(env, mockLogger);
   });
 
   describe("generateEmbeddings", () => {
