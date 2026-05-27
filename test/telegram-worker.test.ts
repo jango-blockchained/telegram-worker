@@ -8,12 +8,7 @@ import {
   beforeAll,
   Mock,
 } from "bun:test";
-import telegramWorker, {
-  generateEmbeddings,
-  insertEmbeddings,
-  queryEmbeddings,
-  handleGetLatestTradeSignalR2,
-} from "../src/index.js";
+import telegramWorker from "../src/index.js";
 import type {
   KVNamespace,
   R2Bucket,
@@ -22,9 +17,6 @@ import type {
 } from "@cloudflare/workers-types";
 
 // --- Mock Types ---
-interface MockBinding<T> {
-  get: Mock<() => Promise<T | null>>;
-}
 interface MockKV {
   // Using any for simplicity
   get: Mock<() => Promise<any>>;
@@ -274,7 +266,6 @@ describe("Telegram Worker", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const fetchCallArgs = fetchMock.mock.calls[0];
     expect(fetchCallArgs[0]).toContain(TEST_BOT_TOKEN);
-    const fetchBody = JSON.parse(fetchCallArgs[1].body);
   });
 
   test("sends telegram message with default chat ID from binding", async () => {

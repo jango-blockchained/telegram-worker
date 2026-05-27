@@ -1,11 +1,8 @@
-import type { KVNamespace } from "@cloudflare/workers-types"; // Import KVNamespace
 import {
   type EnvWithKV,
   logKvTimestamp,
-} from "../../../packages/shared/src/kvUtils"; // Import shared function
-import type { Ai } from "@cloudflare/ai"; // Import the Ai type
-import type { VectorizeIndex } from "@cloudflare/workers-types"; // Import VectorizeIndex type
-import type { R2Bucket } from "@cloudflare/workers-types"; // Import R2Bucket type
+} from "@jango-blockchained/hoox-shared/kvUtils"; // Import shared function
+// KVNamespace, Ai, VectorizeIndex, R2Bucket types are globally available from worker-configuration.d.ts
 import {
   Errors,
   createJsonResponse,
@@ -78,7 +75,7 @@ const router = createRouter<Env>();
 // Define routes
 router.get(
   "/health",
-  async (request: Request, env: Env, ctx: ExecutionContext) => {
+  async (_request: Request, _env: Env, _ctx: ExecutionContext) => {
     return healthCheck({ worker: "telegram-worker" });
   }
 );
@@ -179,7 +176,10 @@ export async function insertEmbeddings(
   const dataToInsert = vectors.map((vector, index) => ({
     id: metadata[index].messageId, // Use messageId as the vector ID
     values: vector,
-    metadata: metadata[index] as any, // Store the whole metadata object
+    metadata: metadata[index] as unknown as Record<
+      string,
+      VectorizeVectorMetadata
+    >, // Store the whole metadata object
   }));
 
   if (dataToInsert.length === 0) {
@@ -273,17 +273,16 @@ async function sendTelegramNotification(
     throw new Error("Telegram bot token not configured.");
   }
 
-  const [botEnabled, defaultChatId, notifyExecution, notifyError] =
-    await Promise.all([
-      env.CONFIG_KV?.get(KVKeys.KV_BOT_ENABLED).then((v) => v !== "false"),
-      env.CONFIG_KV?.get(KVKeys.KV_BOT_DEFAULT_CHAT_ID).then((v) => v || ""),
-      env.CONFIG_KV?.get(KVKeys.KV_BOT_NOTIFY_ON_EXECUTION).then(
-        (v) => v !== "false"
-      ),
-      env.CONFIG_KV?.get(KVKeys.KV_BOT_NOTIFY_ON_ERROR).then(
-        (v) => v !== "false"
-      ),
-    ]);
+  const [botEnabled, defaultChatId] = await Promise.all([
+    env.CONFIG_KV?.get(KVKeys.KV_BOT_ENABLED).then((v) => v !== "false"),
+    env.CONFIG_KV?.get(KVKeys.KV_BOT_DEFAULT_CHAT_ID).then((v) => v || ""),
+    env.CONFIG_KV?.get(KVKeys.KV_BOT_NOTIFY_ON_EXECUTION).then(
+      (v) => v !== "false"
+    ),
+    env.CONFIG_KV?.get(KVKeys.KV_BOT_NOTIFY_ON_ERROR).then(
+      (v) => v !== "false"
+    ),
+  ]);
 
   if (!botEnabled) {
     logger.info(`[${requestId}] Telegram notifications disabled via KV config`);
@@ -314,7 +313,20 @@ async function sendTelegramNotification(
     }),
   });
 
-  const responseData = (await response.json()) as any;
+  interface TelegramApiResponse {
+    ok: boolean;
+    description?: string;
+    result?: {
+      message_id: number;
+      chat: { id: number; type: string };
+      date: number;
+      text?: string;
+    };
+    error_code?: number;
+    [key: string]: unknown;
+  }
+
+  const responseData: TelegramApiResponse = await response.json();
 
   if (!response.ok) {
     logger.error(`[${requestId}] Telegram API Error:`, responseData);
@@ -387,7 +399,7 @@ export async function handleGetLatestTradeSignalR2(
     logger.info(
       `Successfully retrieved object body for key: ${latestObject.key}`
     );
-    return objectBody as any;
+    return objectBody as unknown as R2ObjectBody;
   } catch (error: unknown) {
     logger.error("Error fetching latest trade signal from R2", {
       error: toError(error),
@@ -689,8 +701,6 @@ async function handleWebhookRequest(
         text: messageText,
       };
       await insertEmbeddings(embeddings, [metadata], env);
-      // Optional: Send an acknowledgment back?
-      // await sendTelegramReply(chatId, "Message indexed.", env);
     }
 
     // Respond OK to Telegram webhook immediately after queuing the reply/processing
