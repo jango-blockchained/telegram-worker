@@ -8,72 +8,52 @@
     "@jango-blockchained/hoox-shared/middleware": "../../packages/shared/src/middleware/index.ts",
     "@jango-blockchained/hoox-shared/router": "../../packages/shared/src/router.ts",
     "@jango-blockchained/hoox-shared/types": "../../packages/shared/src/types.ts",
+    "@jango-blockchained/hoox-shared/analytics": "../../packages/shared/src/analytics.ts",
+    "@jango-blockchained/hoox-shared/health": "../../packages/shared/src/health.ts",
+    "@jango-blockchained/hoox-shared/kvKeys": "../../packages/shared/src/kvKeys.ts",
     "@jango-blockchained/hoox-shared/types/router": "../../packages/shared/src/types/router.ts"
   },
-  "compatibility_date": "2025-03-07",
+  "compatibility_date": "2026-04-17",
   "compatibility_flags": ["nodejs_compat"],
-
-  // PLACEMENT: Smart Placement for reduced latency (free, all plans)
   "placement": {
     "mode": "smart"
   },
-
-  // OBSERVABILITY: Enable logging and sampling
   "observability": {
     "enabled": true,
     "head_sampling_rate": 1
   },
-
-  // VARS: Environment variables (secrets set via `wrangler secret put`)
   "vars": {
-    // INTERNAL_KEY: Service-to-service authentication
-    "INTERNAL_KEY_BINDING": null,
-    // TG_BOT_TOKEN: Telegram Bot API token
-    // Set via: wrangler secret put TG_BOT_TOKEN_BINDING
-    "TG_BOT_TOKEN_BINDING": null,
-    // TG_CHAT_ID: Default Telegram chat ID for notifications
-    // Set via: wrangler secret put TG_CHAT_ID_BINDING
-    "TG_CHAT_ID_BINDING": null,
-    // TELEGRAM_SECRET_TOKEN: Webhook verification token
-    // Set via: wrangler secret put TELEGRAM_SECRET_TOKEN
-    "TELEGRAM_SECRET_TOKEN": null
+    "INTERNAL_KEY_BINDING": "__SECRET__",
+    "TG_BOT_TOKEN_BINDING": "__SECRET__",
+    "TG_CHAT_ID_BINDING": "__SECRET__",
+    "TELEGRAM_SECRET_TOKEN": "__SECRET__",
+    "AUTHORIZED_CHAT_IDS": "__SECRET__"
   },
-
-  // KV_NAMESPACES: Key-Value storage for config
   "kv_namespaces": [
     {
       "binding": "CONFIG_KV",
       "id": "YOUR_CONFIG_KV_ID"
     }
   ],
-
-  // R2_BUCKETS: Object storage for user uploads
   "r2_buckets": [
     {
       "binding": "UPLOADS_BUCKET",
-      // BUCKET_NAME: Your R2 bucket name
       "bucket_name": "YOUR_UPLOADS_BUCKET_NAME"
     }
   ],
-
-  // VECTORIZE: AI embeddings index for RAG
   "vectorize": [
     {
       "binding": "VECTORIZE_INDEX",
       "index_name": "YOUR_INDEX_NAME"
     }
   ],
-
-  // AI: Cloudflare Workers AI
   "ai": {
     "binding": "AI"
   },
-
-  // SERVICES: Service bindings to other workers
   "services": [
-    // TRADE_SERVICE: For sending trade notifications
-    { "binding": "TRADE_SERVICE", "service": "trade-worker" },
-    // WEBHOOK_RECEIVER_API: For receiving Telegram updates
-    { "binding": "WEBHOOK_RECEIVER_API", "service": "hoox" }
+    {
+      "binding": "ANALYTICS_SERVICE",
+      "service": "analytics-worker"
+    }
   ]
 }

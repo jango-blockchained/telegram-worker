@@ -2,6 +2,7 @@
   "name": "telegram-worker",
   "version": "1.0.0",
   "description": "Telegram notification service",
+  "license": "MIT",
   "main": "src/index.js",
   "type": "module",
   "scripts": {

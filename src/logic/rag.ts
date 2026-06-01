@@ -1,5 +1,5 @@
 import { toError } from "@jango-blockchained/hoox-shared/errors";
-import { VectorizeVectorMetadata } from "@cloudflare/workers-types";
+import type { Logger } from "@jango-blockchained/hoox-shared/middleware";
 
 // Define the structure for metadata stored with embeddings
 export interface TelegramMessageMetadata {
@@ -24,7 +24,7 @@ export interface VectorizeMatches {
 export async function generateEmbeddings(
   text: string | string[],
   env: any,
-  logger: any
+  logger: Logger
 ): Promise<number[][]> {
   if (!env.AI) {
     logger.error("AI binding is not configured in the environment.");
@@ -63,7 +63,7 @@ export async function insertEmbeddings(
   vectors: number[][],
   metadata: TelegramMessageMetadata[],
   env: any,
-  logger: any
+  logger: Logger
 ): Promise<void> {
   if (vectors.length !== metadata.length) {
     throw new Error("Number of vectors must match number of metadata objects.");
@@ -80,10 +80,7 @@ export async function insertEmbeddings(
   const dataToInsert = vectors.map((vector, index) => ({
     id: metadata[index].messageId, // Use messageId as the vector ID
     values: vector,
-    metadata: metadata[index] as unknown as Record<
-      string,
-      VectorizeVectorMetadata
-    >, // Store the whole metadata object
+    metadata: metadata[index] as unknown as Record<string, unknown>, // Store the whole metadata object
   }));
 
   if (dataToInsert.length === 0) {
@@ -114,7 +111,7 @@ export async function insertEmbeddings(
 export async function queryEmbeddings(
   queryText: string,
   env: any,
-  logger: any,
+  logger: Logger,
   topK: number = 3
 ): Promise<VectorizeMatches> {
   if (!env.VECTORIZE_INDEX) {

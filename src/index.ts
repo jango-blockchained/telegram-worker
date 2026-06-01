@@ -14,6 +14,7 @@ import {
   requireInternalAuth,
   withRequestLog,
 } from "@jango-blockchained/hoox-shared/middleware";
+import type { InternalAuthEnv } from "@jango-blockchained/hoox-shared/middleware";
 import { createRouter } from "@jango-blockchained/hoox-shared/router";
 import { KVKeys } from "@jango-blockchained/hoox-shared/kvKeys";
 import type { ProcessRequestBody } from "@jango-blockchained/hoox-shared/types";
@@ -43,8 +44,9 @@ interface NotificationPayload {
 type TelegramProcessRequestBody = ProcessRequestBody<NotificationPayload>;
 
 // --- Constants ---
-const PROCESS_ENDPOINT = "/process"; // Legacy endpoint
-const WEBHOOK_ENDPOINT = "/webhook"; // New endpoint for service bindings
+const ALERT_ENDPOINT = "/alert"; // Internal notification endpoint (replaces legacy /process)
+const PROCESS_ENDPOINT = "/process"; // Legacy — redirects to /alert
+const WEBHOOK_ENDPOINT = "/webhook"; // Telegram Bot API webhook endpoint
 
 // --- Worker Definition ---
 
@@ -60,19 +62,35 @@ router.get(
   }
 );
 
+// POST /alert — internal notification endpoint (requires internal auth)
+// Called by: hoox, trade-worker, agent-worker, report-worker, web3-wallet-worker
 router.post(
-  PROCESS_ENDPOINT,
+  ALERT_ENDPOINT,
   async (request: Request, env: Env, ctx: ExecutionContext) => {
     ctx.waitUntil(logKvTimestamp(env as unknown as EnvWithKV));
-    return await handleProcessRequest(request, env, ctx);
+    return await handleAlertRequest(request, env, ctx);
   }
 );
 
+// POST /process — legacy endpoint, redirects to /alert
+router.post(
+  PROCESS_ENDPOINT,
+  async (_request: Request, env: Env, ctx: ExecutionContext) => {
+    ctx.waitUntil(logKvTimestamp(env as unknown as EnvWithKV));
+    return Response.redirect(
+      new URL(ALERT_ENDPOINT, _request.url).toString(),
+      308
+    );
+  }
+);
+
+// POST /webhook — Telegram Bot API webhook endpoint
+// Receives updates from Telegram for interactive bot commands
 router.post(
   WEBHOOK_ENDPOINT,
   async (request: Request, env: Env, ctx: ExecutionContext) => {
     ctx.waitUntil(logKvTimestamp(env as unknown as EnvWithKV));
-    return await handleWebhookRequest(request, env, logger);
+    return await handleWebhookRequest(request, env, ctx, logger);
   }
 );
 
@@ -86,9 +104,10 @@ export default {
 };
 
 /**
- * Handles the legacy standardized processing request (/process endpoint).
+ * Handles the internal notification request (/alert endpoint).
+ * Called by other workers via service binding to send Telegram messages.
  */
-async function handleProcessRequest(
+async function handleAlertRequest(
   request: Request,
   env: Env,
   ctx: ExecutionContext
@@ -99,7 +118,10 @@ async function handleProcessRequest(
     const body: TelegramProcessRequestBody = await request.json();
     incomingRequestId = body.requestId || "unknown";
 
-    const authResult = requireInternalAuth(request, env);
+    const authResult = requireInternalAuth(
+      request,
+      env as unknown as InternalAuthEnv
+    );
     if (authResult) return authResult;
 
     const result = await sendTelegramNotification(

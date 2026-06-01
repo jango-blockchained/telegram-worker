@@ -1,4 +1,7 @@
 import { Errors, toError } from "@jango-blockchained/hoox-shared/errors";
+import { trackAnalytics } from "@jango-blockchained/hoox-shared/analytics";
+import type { Logger } from "@jango-blockchained/hoox-shared/middleware";
+import { KVKeys } from "@jango-blockchained/hoox-shared/kvKeys";
 import {
   generateEmbeddings,
   queryEmbeddings,
@@ -12,12 +15,21 @@ import {
 } from "../logic/telegram";
 
 /**
+ * Escape text for Telegram MarkdownV2 format.
+ * Prefixes all special characters with backslash to prevent formatting issues.
+ */
+function escapeMarkdownV2(text: string): string {
+  return text.replace(/([_*[\\]()~`>#+\\-=|{}.!])/g, "\\$1");
+}
+
+/**
  * Handles incoming requests from the Telegram webhook.
  */
 export async function handleWebhookRequest(
   request: Request,
   env: any,
-  logger: any
+  ctx: ExecutionContext,
+  logger: Logger
 ): Promise<Response> {
   // 1. Security Check
   const secretToken = env.TELEGRAM_SECRET_TOKEN;
@@ -29,12 +41,23 @@ export async function handleWebhookRequest(
   }
 
   // 2. Parse Telegram Update
+  // Telegram PhotoSize type for photo messages
+  interface TelegramPhotoSize {
+    file_id: string;
+    file_unique_id: string;
+    width: number;
+    height: number;
+    file_size?: number;
+  }
+
   let update: {
     message?: {
       message_id: number;
       from?: { id: number };
       chat: { id: number };
       text?: string;
+      photo?: TelegramPhotoSize[];
+      caption?: string;
       date: number;
     };
     edited_message?: {
@@ -42,6 +65,8 @@ export async function handleWebhookRequest(
       from?: { id: number };
       chat: { id: number };
       text?: string;
+      photo?: TelegramPhotoSize[];
+      caption?: string;
       date: number;
     };
   };
@@ -56,13 +81,7 @@ export async function handleWebhookRequest(
   }
 
   const message = update.message || update.edited_message;
-  if (
-    !message ||
-    !message.text ||
-    !message.chat ||
-    !message.chat.id ||
-    !message.message_id
-  ) {
+  if (!message || !message.chat || !message.chat.id || !message.message_id) {
     logger.info(
       "Received update without a usable message/chat context. Skipping."
     );
@@ -70,43 +89,97 @@ export async function handleWebhookRequest(
   }
 
   const chatId = message.chat.id;
-  const messageText = message.text.trim();
-  const messageId = String(message.message_id);
+  const hasPhoto = message.photo && message.photo.length > 0;
   const senderId = message.from?.id ? String(message.from.id) : undefined;
 
-  // 3. Command Handling & Processing
-  try {
-    if (messageText.startsWith("/search ")) {
-      const query = messageText.substring(8).trim();
-      if (!query) {
-        await sendTelegramReply(
-          chatId,
-          "Please provide a search term after /search.",
-          env,
-          logger
-        );
-      } else {
-        logger.info(`Processing /search command with query: "${query}"`);
-        const searchResults = await queryEmbeddings(query, env, logger, 5);
+  // If message has no text but has a photo, handle as photo/chart
+  if (!message.text && hasPhoto) {
+    logger.info("Received photo message — processing with AI vision");
+    return await handlePhotoMessage(
+      message as typeof message & { photo: TelegramPhotoSize[] },
+      chatId,
+      message.message_id,
+      env,
+      ctx,
+      logger
+    );
+  }
 
-        let replyText = `Found ${searchResults.matches.length} results for "_${query}_":\n\n`;
-        if (searchResults.matches.length > 0) {
-          searchResults.matches.forEach((match, index) => {
-            const originalText =
-              (match.metadata?.text as string) || "(No text found)";
-            const escapedText = originalText.replace(
-              /([_*[\\]()~`>#+\\-=|{}.!])/g,
-              "\\$1"
-            );
-            replyText += `${index + 1}. (${match.score.toFixed(3)}) ${escapedText}\n`;
-          });
-        } else {
-          replyText = `No results found for "_${query}_."`;
-        }
-        await sendTelegramReply(chatId, replyText, env, logger);
-      }
-    } else if (messageText === "/latest") {
-      logger.info("Processing /latest command...");
+  // If message has neither text nor photo, skip silently
+  if (!message.text && !hasPhoto) {
+    logger.info(
+      "Received update without usable content (no text or photo). Skipping."
+    );
+    return new Response("OK", { status: 200 });
+  }
+
+  const messageText = message.text!.trim();
+  const messageId = String(message.message_id);
+
+  // 3. Chat ID Authorization Check
+  // Only allow commands from authorized chat IDs (if configured)
+  const authorizedChatIds = env.AUTHORIZED_CHAT_IDS as string | undefined;
+  if (authorizedChatIds && authorizedChatIds !== "__SECRET__") {
+    const allowedIds = authorizedChatIds
+      .split(",")
+      .map((id: string) => id.trim())
+      .filter(Boolean);
+    if (allowedIds.length > 0 && !allowedIds.includes(String(chatId))) {
+      logger.warn(
+        `Unauthorized command from chat ${chatId} (sender: ${senderId || "unknown"}): "${messageText}"`
+      );
+      // Silently return OK to not reveal existence of auth filtering
+      return new Response("OK", { status: 200 });
+    }
+  }
+
+  // 4. Analytics Tracking (fire-and-forget)
+  ctx.waitUntil(
+    trackAnalytics(env, "/track/notification", {
+      data: {
+        type: "telegram_webhook",
+        target: String(chatId),
+        command: messageText.startsWith("/")
+          ? messageText.split(" ")[0]
+          : "message",
+      },
+    })
+  );
+
+  // 5. Command Handling & Processing
+  try {
+    if (messageText === "/start") {
+      const welcomeText =
+        "Welcome to *Hoox Bot* \\- Your trading assistant\\!\n\n" +
+        "*Available Commands:*\n" +
+        "• `/start` \\- Show this help message\n" +
+        "• `/status` \\- Check system status & kill switch\n" +
+        "• `/latest` or `/trades` \\- Latest trade signal\n" +
+        "• `/positions` \\- View open positions\n" +
+        "• `/search <query>` \\- Search message history\n" +
+        "• `/ask <question>` \\- Ask AI about context\n" +
+        "• `/kill\\_on` \\- Enable global kill switch\n" +
+        "• `/kill\\_off` \\- Disable global kill switch\n\n" +
+        "_Any other message will be indexed for future search\\._";
+      await sendTelegramReply(chatId, welcomeText, env, logger);
+    } else if (messageText === "/status") {
+      logger.info("Processing /status command...");
+      const killSwitch = await env.CONFIG_KV.get(KVKeys.KV_TRADE_KILL_SWITCH);
+      const isKillSwitchActive = killSwitch === "true" || killSwitch === "True";
+      const statusIcon = isKillSwitchActive ? "🚫" : "✅";
+      const statusText = isKillSwitchActive
+        ? "ACTIVE \\- all trading halted"
+        : "INACTIVE \\- trading permitted";
+      await sendTelegramReply(
+        chatId,
+        `*Hoox System Status*\n\n` +
+          `${statusIcon} *Kill Switch:* ${statusText}\n` +
+          `_Last checked: ${new Date().toISOString()}_`,
+        env,
+        logger
+      );
+    } else if (messageText === "/latest" || messageText === "/trades") {
+      logger.info(`Processing ${messageText} command...`);
       const latestSignalObject = await handleGetLatestTradeSignalR2(
         env,
         logger
@@ -115,9 +188,8 @@ export async function handleWebhookRequest(
         try {
           const text = await new Response(latestSignalObject.body).text();
           const signalData = JSON.parse(text);
-          const formattedSignal = JSON.stringify(signalData, null, 2).replace(
-            /([_*[\\]()~`>#+\\-=|{}.!])/g,
-            "\\$1"
+          const formattedSignal = escapeMarkdownV2(
+            JSON.stringify(signalData, null, 2)
           );
           await sendTelegramReply(
             chatId,
@@ -143,6 +215,61 @@ export async function handleWebhookRequest(
           env,
           logger
         );
+      }
+    } else if (messageText === "/positions") {
+      logger.info("Processing /positions command...");
+      await sendTelegramReply(
+        chatId,
+        "Open positions can be viewed in the Hoox dashboard\\.\n" +
+          "Use the dashboard for a detailed view of all active positions and PnL\\.",
+        env,
+        logger
+      );
+    } else if (messageText === "/kill_on") {
+      logger.info("Processing /kill_on command...");
+      await env.CONFIG_KV.put(KVKeys.KV_TRADE_KILL_SWITCH, "true");
+      logger.info("Global kill switch engaged via Telegram command");
+      await sendTelegramReply(
+        chatId,
+        "🚫 *Global Kill Switch ENGAGED*\nAll new trade signals will be rejected until the kill switch is disabled\\.",
+        env,
+        logger
+      );
+    } else if (messageText === "/kill_off") {
+      logger.info("Processing /kill_off command...");
+      await env.CONFIG_KV.put(KVKeys.KV_TRADE_KILL_SWITCH, "false");
+      logger.info("Global kill switch disengaged via Telegram command");
+      await sendTelegramReply(
+        chatId,
+        "✅ *Global Kill Switch DISABLED*\nTrading signals will be processed normally\\.",
+        env,
+        logger
+      );
+    } else if (messageText.startsWith("/search ")) {
+      const query = messageText.substring(8).trim();
+      if (!query) {
+        await sendTelegramReply(
+          chatId,
+          "Please provide a search term after /search.",
+          env,
+          logger
+        );
+      } else {
+        logger.info(`Processing /search command with query: "${query}"`);
+        const searchResults = await queryEmbeddings(query, env, logger, 5);
+
+        let replyText = `Found ${searchResults.matches.length} results for "_${query}_":\n\n`;
+        if (searchResults.matches.length > 0) {
+          searchResults.matches.forEach((match, index) => {
+            const originalText =
+              (match.metadata?.text as string) || "(No text found)";
+            const escapedText = escapeMarkdownV2(originalText);
+            replyText += `${index + 1}. (${match.score.toFixed(3)}) ${escapedText}\n`;
+          });
+        } else {
+          replyText = `No results found for "_${query}_."`;
+        }
+        await sendTelegramReply(chatId, replyText, env, logger);
       }
     } else if (messageText.startsWith("/ask ")) {
       const question = messageText.substring(5).trim();
@@ -241,10 +368,7 @@ export async function handleWebhookRequest(
             return new Response("OK", { status: 200 });
           }
 
-          const replyText = aiResponse.response.replace(
-            /([_*[\\]()~`>#+\\-=|{}.!])/g,
-            "\\$1"
-          );
+          const replyText = escapeMarkdownV2(aiResponse.response);
           await sendTelegramReply(chatId, replyText, env, logger);
         }
       }
@@ -280,6 +404,177 @@ export async function handleWebhookRequest(
         error: toError(sendError),
       });
     }
+    return new Response("OK", { status: 200 });
+  }
+}
+
+/**
+ * Handles incoming photo messages from Telegram.
+ * Downloads the photo, stores it in R2, and optionally runs AI vision analysis.
+ */
+async function handlePhotoMessage(
+  message: {
+    message_id: number;
+    from?: { id: number };
+    chat: { id: number };
+    photo: {
+      file_id: string;
+      file_unique_id: string;
+      width: number;
+      height: number;
+      file_size?: number;
+    }[];
+    caption?: string;
+    date: number;
+  },
+  chatId: number,
+  messageId: number,
+  env: any,
+  ctx: ExecutionContext,
+  logger: Logger
+): Promise<Response> {
+  const botToken = env.TG_BOT_TOKEN_BINDING;
+  if (!botToken) {
+    logger.error("TG_BOT_TOKEN_BINDING not configured for photo download");
+    return new Response("OK", { status: 200 });
+  }
+
+  try {
+    // 1. Get the largest photo (last in the array)
+    const largestPhoto = message.photo[message.photo.length - 1];
+    const fileId = largestPhoto.file_id;
+    const fileExt = largestPhoto.file_id.startsWith("AQA") ? "jpg" : "jpg"; // Telegram uses JPEG
+
+    logger.info(
+      `Processing photo: file_id=${fileId}, size=${largestPhoto.width}x${largestPhoto.height}`
+    );
+
+    // 2. Get file path from Telegram API
+    const getFileUrl = `https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`;
+    const getFileResponse = await fetch(getFileUrl);
+    const getFileData: any = await getFileResponse.json();
+
+    if (!getFileData.ok || !getFileData.result?.file_path) {
+      logger.error("Failed to get file path from Telegram", { getFileData });
+      await sendTelegramReply(
+        chatId,
+        "Sorry, I couldn't download the photo\\. Please try again\\.",
+        env,
+        logger
+      );
+      return new Response("OK", { status: 200 });
+    }
+
+    const filePath = getFileData.result.file_path;
+
+    // 3. Download the photo from Telegram's CDN
+    const downloadUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
+    const photoResponse = await fetch(downloadUrl);
+    if (!photoResponse.ok) {
+      logger.error("Failed to download photo from Telegram CDN", {
+        status: photoResponse.status,
+      });
+      await sendTelegramReply(
+        chatId,
+        "Sorry, I couldn't download the photo\\. Please try again\\.",
+        env,
+        logger
+      );
+      return new Response("OK", { status: 200 });
+    }
+
+    const photoBlob = await photoResponse.blob();
+    const photoArrayBuffer = await photoBlob.arrayBuffer();
+
+    // 4. Store photo in R2 bucket for future reference
+    const r2Key = `telegram/photos/${Date.now()}_${messageId}.${fileExt}`;
+    if (env.UPLOADS_BUCKET) {
+      ctx.waitUntil(
+        env.UPLOADS_BUCKET.put(r2Key, photoBlob, {
+          httpMetadata: { contentType: `image/${fileExt}` },
+          customMetadata: {
+            chatId: String(chatId),
+            messageId: String(messageId),
+            caption: message.caption || "",
+            originalFileId: fileId,
+          },
+        }).then(() => {
+          logger.info(`Photo stored in R2: ${r2Key}`);
+        })
+      );
+    }
+
+    // 5. Run AI vision analysis on the photo
+    await sendTelegramReply(
+      chatId,
+      "_Analyzing the image with AI\\.\\.\\._",
+      env,
+      logger
+    );
+
+    // Convert to base64 for Workers AI
+    const photoBase64 = btoa(
+      String.fromCharCode(...new Uint8Array(photoArrayBuffer))
+    );
+    const dataUri = `data:image/${fileExt};base64,${photoBase64}`;
+
+    const analysisPrompt = message.caption
+      ? `Analyze this image in context: "${message.caption}". Describe what you see in detail.`
+      : "Describe this image in detail. If it appears to be a trading chart or financial data, analyze the patterns, trends, and key levels visible.";
+
+    let aiResponse: { response?: string };
+    try {
+      aiResponse = (await env.AI.run("@cf/meta/llama-3.2-11b-vision-instruct", {
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: analysisPrompt },
+              {
+                type: "image_url",
+                image_url: { url: dataUri },
+              },
+            ],
+          },
+        ],
+        max_tokens: 512,
+      })) as { response?: string };
+    } catch (aiError: unknown) {
+      logger.error("Error calling AI vision model", {
+        error: toError(aiError),
+      });
+      await sendTelegramReply(
+        chatId,
+        "I received your photo but couldn't analyze it with AI right now\\. It's been saved for later review\\.",
+        env,
+        logger
+      );
+      return new Response("OK", { status: 200 });
+    }
+
+    const analysisText = aiResponse?.response || "No analysis generated.";
+
+    // Truncate if needed (Telegram has 4096 char limit per message)
+    const maxLength = 4000;
+    const truncated =
+      analysisText.length > maxLength
+        ? analysisText.substring(0, maxLength) + "\\..."
+        : analysisText;
+
+    const replyText = `*AI Image Analysis:*\n\n${escapeMarkdownV2(truncated)}`;
+    await sendTelegramReply(chatId, replyText, env, logger);
+
+    return new Response("OK", { status: 200 });
+  } catch (error: unknown) {
+    logger.error("Error processing photo message", {
+      error: toError(error),
+    });
+    await sendTelegramReply(
+      chatId,
+      "An error occurred while processing your photo\\.",
+      env,
+      logger
+    );
     return new Response("OK", { status: 200 });
   }
 }

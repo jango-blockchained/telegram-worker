@@ -62,6 +62,7 @@ type MockEnvForTest = {
   TG_BOT_TOKEN_BINDING?: string | null;
   TELEGRAM_SECRET_TOKEN?: string;
   TG_CHAT_ID_BINDING?: string | null;
+  AUTHORIZED_CHAT_IDS?: string | null;
   CONFIG_KV: MockKV;
   REPORT_KV?: MockKV;
   AI: MockAI;
@@ -75,6 +76,7 @@ const createMockEnv = (secrets: {
   botToken?: string | null;
   chatId?: string | null;
   webhookSecret?: string | null;
+  authorizedChatIds?: string | null;
 }): MockEnvForTest => {
   const createR2Mock = (): MockR2 => ({
     get: mock(),
@@ -93,6 +95,10 @@ const createMockEnv = (secrets: {
       secrets.botToken === undefined ? null : secrets.botToken,
     TELEGRAM_SECRET_TOKEN:
       secrets.webhookSecret === null ? undefined : secrets.webhookSecret,
+    AUTHORIZED_CHAT_IDS:
+      secrets.authorizedChatIds !== undefined
+        ? secrets.authorizedChatIds
+        : undefined,
     TG_CHAT_ID_BINDING:
       secrets.chatId !== undefined ? secrets.chatId : undefined,
     CONFIG_KV: {
@@ -129,7 +135,7 @@ const createMockEnv = (secrets: {
   } as any;
 };
 
-const PROCESS_ENDPOINT = "/process";
+const PROCESS_ENDPOINT = "/alert";
 
 // Mock ExecutionContext with waitUntil for tests
 // Cloudflare Workers ctx.waitUntil returns void, not Promise — the runtime
@@ -730,6 +736,12 @@ describe("Telegram Worker Webhook Handler (/webhook)", () => {
 
   beforeEach(() => {
     mock.restore();
+    // Clear call counts for module-level mocks (mock.restore doesn't reset standalone mocks)
+    mockAiRun.mockClear();
+    mockVectorizeInsert.mockClear();
+    mockVectorizeQuery.mockClear();
+    mockR2Get.mockClear();
+    mockFetch.mockClear();
     mockEnv = createMockEnv({
       botToken: TEST_BOT_TOKEN,
       chatId: TEST_CHAT_ID,
@@ -875,5 +887,262 @@ describe("Telegram Worker Webhook Handler (/webhook)", () => {
       })
     );
     expect(mockFetch).not.toHaveBeenCalled();
+  });
+
+  test("/start command should return welcome message", async () => {
+    const chatId = 987654321;
+    const webhookBody = {
+      update_id: 12345,
+      message: {
+        message_id: 100,
+        chat: { id: chatId, type: "private" },
+        date: Math.floor(Date.now() / 1000),
+        text: "/start",
+        from: { id: 111, is_bot: false, first_name: "Test" },
+      },
+    };
+    const request = new Request(
+      `https://telegram-worker.workers.dev${WEBHOOK_ENDPOINT}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET,
+        },
+        body: JSON.stringify(webhookBody),
+      }
+    );
+    const response = await telegramWorker.fetch(
+      request as any,
+      mockEnv as any,
+      mockCtx
+    );
+    expect(response.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    // Should NOT vectorize /start text
+    expect(mockAiRun).not.toHaveBeenCalled();
+    expect(mockVectorizeInsert).not.toHaveBeenCalled();
+    const fetchArgs = mockFetch.mock.calls[0];
+    const fetchBody = JSON.parse(fetchArgs[1].body);
+    expect(fetchBody.chat_id).toBe(chatId);
+    expect(fetchBody.text).toContain("Welcome");
+    expect(fetchBody.text).toContain("/status");
+    expect(fetchBody.text).toContain("/kill");
+  });
+
+  test("/status command should check kill switch in CONFIG_KV", async () => {
+    const chatId = 987654321;
+    mockEnv.CONFIG_KV.get = mock().mockImplementation((key: string) => {
+      if (key === "trade:kill_switch") return Promise.resolve("true");
+      return Promise.resolve(null);
+    });
+    const webhookBody = {
+      update_id: 12345,
+      message: {
+        message_id: 101,
+        chat: { id: chatId, type: "private" },
+        date: Math.floor(Date.now() / 1000),
+        text: "/status",
+        from: { id: 111, is_bot: false, first_name: "Test" },
+      },
+    };
+    const request = new Request(
+      `https://telegram-worker.workers.dev${WEBHOOK_ENDPOINT}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET,
+        },
+        body: JSON.stringify(webhookBody),
+      }
+    );
+    const response = await telegramWorker.fetch(
+      request as any,
+      mockEnv as any,
+      mockCtx
+    );
+    expect(response.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const fetchBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(fetchBody.text).toContain("Kill Switch");
+    expect(fetchBody.text).toContain("ACTIVE");
+    expect(mockAiRun).not.toHaveBeenCalled();
+  });
+
+  test("/kill_on command should write kill switch to CONFIG_KV", async () => {
+    const chatId = 987654321;
+    const kvPutMock = mock().mockResolvedValue(undefined);
+    mockEnv.CONFIG_KV.put = kvPutMock;
+    const webhookBody = {
+      update_id: 12345,
+      message: {
+        message_id: 102,
+        chat: { id: chatId, type: "private" },
+        date: Math.floor(Date.now() / 1000),
+        text: "/kill_on",
+        from: { id: 111, is_bot: false, first_name: "Test" },
+      },
+    };
+    const request = new Request(
+      `https://telegram-worker.workers.dev${WEBHOOK_ENDPOINT}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET,
+        },
+        body: JSON.stringify(webhookBody),
+      }
+    );
+    const response = await telegramWorker.fetch(
+      request as any,
+      mockEnv as any,
+      mockCtx
+    );
+    expect(response.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(kvPutMock).toHaveBeenCalledWith("trade:kill_switch", "true");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const fetchBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(fetchBody.text).toContain("ENGAGED");
+    expect(mockAiRun).not.toHaveBeenCalled();
+  });
+
+  test("/kill_off command should write false to CONFIG_KV", async () => {
+    const chatId = 987654321;
+    const kvPutMock = mock().mockResolvedValue(undefined);
+    mockEnv.CONFIG_KV.put = kvPutMock;
+    const webhookBody = {
+      update_id: 12345,
+      message: {
+        message_id: 103,
+        chat: { id: chatId, type: "private" },
+        date: Math.floor(Date.now() / 1000),
+        text: "/kill_off",
+        from: { id: 111, is_bot: false, first_name: "Test" },
+      },
+    };
+    const request = new Request(
+      `https://telegram-worker.workers.dev${WEBHOOK_ENDPOINT}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET,
+        },
+        body: JSON.stringify(webhookBody),
+      }
+    );
+    const response = await telegramWorker.fetch(
+      request as any,
+      mockEnv as any,
+      mockCtx
+    );
+    expect(response.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(kvPutMock).toHaveBeenCalledWith("trade:kill_switch", "false");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+    const fetchBody = JSON.parse(mockFetch.mock.calls[0][1].body);
+    expect(fetchBody.text).toContain("DISABLED");
+  });
+
+  test("should reject unauthorized chat when AUTHORIZED_CHAT_IDS is set", async () => {
+    mockEnv = createMockEnv({
+      botToken: TEST_BOT_TOKEN,
+      chatId: TEST_CHAT_ID,
+      webhookSecret: WEBHOOK_SECRET,
+      internalKey: undefined,
+      authorizedChatIds: "111,222",
+    });
+    mockEnv.AI.run = mockAiRun;
+    mockEnv.VECTORIZE_INDEX.insert = mockVectorizeInsert;
+    mockEnv.VECTORIZE_INDEX.query = mockVectorizeQuery;
+    mockEnv.UPLOADS_BUCKET.get = mockR2Get;
+    global.fetch = mockFetch as unknown as typeof global.fetch;
+
+    const chatId = 333; // Not in authorized list
+    const webhookBody = {
+      update_id: 12345,
+      message: {
+        message_id: 104,
+        chat: { id: chatId, type: "private" },
+        date: Math.floor(Date.now() / 1000),
+        text: "/status",
+        from: { id: 333, is_bot: false, first_name: "Evil" },
+      },
+    };
+    const request = new Request(
+      `https://telegram-worker.workers.dev${WEBHOOK_ENDPOINT}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET,
+        },
+        body: JSON.stringify(webhookBody),
+      }
+    );
+    const response = await telegramWorker.fetch(
+      request as any,
+      mockEnv as any,
+      mockCtx
+    );
+    // Silently returns 200 with no processing
+    expect(response.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // No fetch to Telegram API, no AI, no Vectorize
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockAiRun).not.toHaveBeenCalled();
+    expect(mockVectorizeInsert).not.toHaveBeenCalled();
+  });
+
+  test("should allow authorized chat when AUTHORIZED_CHAT_IDS is set", async () => {
+    mockEnv = createMockEnv({
+      botToken: TEST_BOT_TOKEN,
+      chatId: TEST_CHAT_ID,
+      webhookSecret: WEBHOOK_SECRET,
+      internalKey: undefined,
+      authorizedChatIds: "111,222",
+    });
+    mockEnv.AI.run = mockAiRun;
+    mockEnv.VECTORIZE_INDEX.insert = mockVectorizeInsert;
+    mockEnv.VECTORIZE_INDEX.query = mockVectorizeQuery;
+    mockEnv.UPLOADS_BUCKET.get = mockR2Get;
+    global.fetch = mockFetch as unknown as typeof global.fetch;
+
+    const chatId = 111; // In authorized list
+    const webhookBody = {
+      update_id: 12345,
+      message: {
+        message_id: 105,
+        chat: { id: chatId, type: "private" },
+        date: Math.floor(Date.now() / 1000),
+        text: "/status",
+        from: { id: 111, is_bot: false, first_name: "Admin" },
+      },
+    };
+    const request = new Request(
+      `https://telegram-worker.workers.dev${WEBHOOK_ENDPOINT}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Telegram-Bot-Api-Secret-Token": WEBHOOK_SECRET,
+        },
+        body: JSON.stringify(webhookBody),
+      }
+    );
+    const response = await telegramWorker.fetch(
+      request as any,
+      mockEnv as any,
+      mockCtx
+    );
+    expect(response.status).toBe(200);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    // Should process command normally
+    expect(mockFetch).toHaveBeenCalledTimes(1);
   });
 });

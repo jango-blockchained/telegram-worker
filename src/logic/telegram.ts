@@ -4,6 +4,7 @@ import {
   toError,
 } from "@jango-blockchained/hoox-shared/errors";
 import { trackAnalytics } from "@jango-blockchained/hoox-shared/analytics";
+import type { Logger } from "@jango-blockchained/hoox-shared/middleware";
 
 /**
  * Core logic to send a Telegram message.
@@ -12,7 +13,7 @@ export async function sendTelegramNotification(
   payload: { message: string; chatId?: string },
   env: any,
   ctx: ExecutionContext,
-  logger: any,
+  logger: Logger,
   requestId: string = "unknown"
 ): Promise<any> {
   const botToken = env.TG_BOT_TOKEN_BINDING;
@@ -76,7 +77,7 @@ export async function sendTelegramReply(
   chatId: string | number,
   text: string,
   env: any,
-  logger: any
+  logger: Logger
 ): Promise<Response> {
   const botToken = env.TG_BOT_TOKEN_BINDING;
   if (!botToken) {
@@ -124,7 +125,7 @@ export async function sendTelegramReply(
  */
 export async function handleGetLatestTradeSignalR2(
   env: any,
-  logger: any
+  logger: Logger
 ): Promise<any | null> {
   if (!env.UPLOADS_BUCKET) {
     logger.error("R2_BUCKET binding is not configured.");
