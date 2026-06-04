@@ -245,8 +245,12 @@ export async function handleWebhookRequest(
         env,
         logger
       );
-    } else if (messageText.startsWith("/search ")) {
-      const query = messageText.substring(8).trim();
+    } else if (
+      messageText === "/search" ||
+      messageText.startsWith("/search ")
+    ) {
+      const query =
+        messageText === "/search" ? "" : messageText.substring(8).trim();
       if (!query) {
         await sendTelegramReply(
           chatId,
@@ -256,23 +260,36 @@ export async function handleWebhookRequest(
         );
       } else {
         logger.info(`Processing /search command with query: "${query}"`);
-        const searchResults = await queryEmbeddings(query, env, logger, 5);
+        try {
+          const searchResults = await queryEmbeddings(query, env, logger, 5);
 
-        let replyText = `Found ${searchResults.matches.length} results for "_${query}_":\n\n`;
-        if (searchResults.matches.length > 0) {
-          searchResults.matches.forEach((match, index) => {
-            const originalText =
-              (match.metadata?.text as string) || "(No text found)";
-            const escapedText = escapeMarkdownV2(originalText);
-            replyText += `${index + 1}. (${match.score.toFixed(3)}) ${escapedText}\n`;
+          let replyText = `Found ${searchResults.matches.length} results for "_${query}_":\n\n`;
+          if (searchResults.matches.length > 0) {
+            searchResults.matches.forEach((match, index) => {
+              const originalText =
+                (match.metadata?.text as string) || "(No text found)";
+              const escapedText = escapeMarkdownV2(originalText);
+              replyText += `${index + 1}. (${match.score.toFixed(3)}) ${escapedText}\n`;
+            });
+          } else {
+            replyText = `No results found for "_${query}_."`;
+          }
+          await sendTelegramReply(chatId, replyText, env, logger);
+        } catch (searchError: unknown) {
+          logger.error("Error searching vectorize during /search", {
+            error: toError(searchError),
           });
-        } else {
-          replyText = `No results found for "_${query}_."`;
+          await sendTelegramReply(
+            chatId,
+            "Sorry, I encountered an error searching the message history\\. Please try again later\\.",
+            env,
+            logger
+          );
         }
-        await sendTelegramReply(chatId, replyText, env, logger);
       }
-    } else if (messageText.startsWith("/ask ")) {
-      const question = messageText.substring(5).trim();
+    } else if (messageText === "/ask" || messageText.startsWith("/ask ")) {
+      const question =
+        messageText === "/ask" ? "" : messageText.substring(5).trim();
       if (!question) {
         await sendTelegramReply(
           chatId,
