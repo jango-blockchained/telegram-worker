@@ -32,7 +32,14 @@ import { handleGetLatestTradeSignalR2 } from "./logic/telegram";
 
 // --- Type Definitions ---
 
-export interface Env extends Cloudflare.Env, AnalyticsEnv {}
+export interface Env extends Cloudflare.Env, AnalyticsEnv, EnvWithKV {
+  [key: string]: unknown;
+  CONFIG_KV: KVNamespace;
+  UPLOADS_BUCKET: R2Bucket;
+  VECTORIZE_INDEX: VectorizeIndex;
+  AI: Ai;
+  ANALYTICS_SERVICE: Fetcher;
+}
 
 // Payload structure for incoming requests (both /process and /webhook)
 interface NotificationPayload {
@@ -67,7 +74,7 @@ router.get(
 router.post(
   ALERT_ENDPOINT,
   async (request: Request, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(logKvTimestamp(env as unknown as EnvWithKV));
+    ctx.waitUntil(logKvTimestamp(env, "CONFIG_KV"));
     return await handleAlertRequest(request, env, ctx);
   }
 );
@@ -76,7 +83,7 @@ router.post(
 router.post(
   PROCESS_ENDPOINT,
   async (_request: Request, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(logKvTimestamp(env as unknown as EnvWithKV));
+    ctx.waitUntil(logKvTimestamp(env, "CONFIG_KV"));
     return Response.redirect(
       new URL(ALERT_ENDPOINT, _request.url).toString(),
       308
@@ -89,7 +96,7 @@ router.post(
 router.post(
   WEBHOOK_ENDPOINT,
   async (request: Request, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(logKvTimestamp(env as unknown as EnvWithKV));
+    ctx.waitUntil(logKvTimestamp(env, "CONFIG_KV"));
     return await handleWebhookRequest(request, env, ctx, logger);
   }
 );
@@ -118,10 +125,7 @@ async function handleAlertRequest(
     const body: TelegramProcessRequestBody = await request.json();
     incomingRequestId = body.requestId || "unknown";
 
-    const authResult = requireInternalAuth(
-      request,
-      env as unknown as InternalAuthEnv
-    );
+    const authResult = requireInternalAuth(request, env);
     if (authResult) return authResult;
 
     const result = await sendTelegramNotification(
