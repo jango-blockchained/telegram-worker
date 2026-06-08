@@ -1,6 +1,6 @@
 {
+  // Telegram Worker — notifications and bot interactions
   "name": "telegram-worker",
-  // ACCOUNT_ID: Get from Cloudflare Dashboard > Overview > Account ID
   "account_id": "YOUR_ACCOUNT_ID",
   "main": "src/index.ts",
   "alias": {
@@ -13,43 +13,40 @@
     "@jango-blockchained/hoox-shared/kvKeys": "../../packages/shared/src/kvKeys.ts",
     "@jango-blockchained/hoox-shared/types/router": "../../packages/shared/src/types/router.ts"
   },
-  "compatibility_date": "2026-04-17",
+  "compatibility_date": "2026-06-08",
   "compatibility_flags": ["nodejs_compat"],
   "placement": {
     "mode": "smart"
   },
   "observability": {
     "enabled": true,
-    "head_sampling_rate": 1
+    "logs": { "enabled": true, "head_sampling_rate": 1 },
+    "traces": { "enabled": true, "head_sampling_rate": 0.01 }
   },
   "vars": {
-    "INTERNAL_KEY_BINDING": "__SECRET__",
-    "TG_BOT_TOKEN_BINDING": "__SECRET__",
-    "TG_CHAT_ID_BINDING": "__SECRET__",
-    "TELEGRAM_SECRET_TOKEN": "__SECRET__",
-    "AUTHORIZED_CHAT_IDS": "__SECRET__"
+    // Secrets must be created via `wrangler secret put <NAME>`.
+    // Create via: wrangler secret put INTERNAL_KEY_BINDING
+    //            wrangler secret put TG_BOT_TOKEN_BINDING
+    //            wrangler secret put TG_CHAT_ID_BINDING
+    //            wrangler secret put TELEGRAM_SECRET_TOKEN
+    //            wrangler secret put AUTHORIZED_CHAT_IDS
   },
   "kv_namespaces": [
     {
       "binding": "CONFIG_KV",
+      "id": "YOUR_CONFIG_KV_ID"
+    },
+    {
+      "binding": "REPORT_KV",
       "id": "YOUR_CONFIG_KV_ID"
     }
   ],
   "r2_buckets": [
     {
       "binding": "UPLOADS_BUCKET",
-      "bucket_name": "YOUR_UPLOADS_BUCKET_NAME"
+      "bucket_name": "user-uploads"
     }
   ],
-  "vectorize": [
-    {
-      "binding": "VECTORIZE_INDEX",
-      "index_name": "YOUR_INDEX_NAME"
-    }
-  ],
-  "ai": {
-    "binding": "AI"
-  },
   "services": [
     {
       "binding": "ANALYTICS_SERVICE",

@@ -1,8 +1,12 @@
-# Telegram Worker Environment Variables
-INTERNAL_KEY_BINDING=your_internal_key_binding_here
-TG_BOT_TOKEN_BINDING=your_telegram_bot_token_here
-ALLOWED_CHAT_IDS=12345678,87654321
+# Telegram Worker Environment Variables (local development)
+# Copy to .dev.vars and replace with actual values from `hoox setup` output.
+# .dev.vars is gitignored — never commit secrets.
 
-# Note: This file provides example values for local development.
-# Copy this file to .dev.vars and replace with your actual values.
-# .dev.vars is ignored by git to prevent committing sensitive information. 
+# Internal auth key for service-to-service authentication
+INTERNAL_KEY_BINDING=your_internal_key_binding_here
+
+# Telegram Bot Token (get from @BotFather on Telegram)
+TG_BOT_TOKEN_BINDING=your_telegram_bot_token_here
+
+# Comma-separated list of authorized chat IDs
+AUTHORIZED_CHAT_IDS=12345678,87654321
