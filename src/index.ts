@@ -33,7 +33,6 @@ import { handleGetLatestTradeSignalR2 } from "./logic/telegram";
 // --- Type Definitions ---
 
 export interface Env extends Cloudflare.Env, AnalyticsEnv, EnvWithKV {
-  [key: string]: unknown;
   CONFIG_KV: KVNamespace;
   UPLOADS_BUCKET: R2Bucket;
   VECTORIZE_INDEX: VectorizeIndex;
