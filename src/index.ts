@@ -73,7 +73,7 @@ router.get(
 router.post(
   ALERT_ENDPOINT,
   async (request: Request, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(logKvTimestamp(env, "CONFIG_KV"));
+    ctx.waitUntil(logKvTimestamp(env, "CONFIG_KV").catch((err) => logger.error("logKvTimestamp failed", { error: String(err) })));
     return await handleAlertRequest(request, env, ctx);
   }
 );
@@ -82,7 +82,7 @@ router.post(
 router.post(
   PROCESS_ENDPOINT,
   async (_request: Request, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(logKvTimestamp(env, "CONFIG_KV"));
+    ctx.waitUntil(logKvTimestamp(env, "CONFIG_KV").catch((err) => logger.error("logKvTimestamp failed", { error: String(err) })));
     return Response.redirect(
       new URL(ALERT_ENDPOINT, _request.url).toString(),
       308
@@ -95,7 +95,7 @@ router.post(
 router.post(
   WEBHOOK_ENDPOINT,
   async (request: Request, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(logKvTimestamp(env, "CONFIG_KV"));
+    ctx.waitUntil(logKvTimestamp(env, "CONFIG_KV").catch((err) => logger.error("logKvTimestamp failed", { error: String(err) })));
     return await handleWebhookRequest(request, env, ctx, logger);
   }
 );
