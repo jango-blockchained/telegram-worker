@@ -43,6 +43,7 @@ export async function sendTelegramNotification(
       parse_mode: "HTML",
       disable_web_page_preview: true,
     }),
+    signal: AbortSignal.timeout(10000),
   });
 
   const responseData: any = await response.json();
@@ -97,6 +98,7 @@ export async function sendTelegramReply(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10000),
     });
 
     const responseBody = await response.json();

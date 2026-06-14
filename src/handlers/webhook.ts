@@ -72,7 +72,7 @@ export async function handleWebhookRequest(
   };
   try {
     update = await request.json();
-    logger.info("Received Telegram update", { update });
+    logger.debug("Received Telegram update", { update });
   } catch (error: unknown) {
     logger.error("Failed to parse Telegram update JSON", {
       error: toError(error),
@@ -426,6 +426,22 @@ export async function handleWebhookRequest(
 }
 
 /**
+ * Converts a Uint8Array to a base64 string using chunked encoding
+ * to avoid the call stack size limit from spreading large arrays.
+ */
+function uint8ArrayToBase64(bytes: Uint8Array): string {
+  const CHUNK_SIZE = 32768;
+  let binary = "";
+  for (let i = 0; i < bytes.length; i += CHUNK_SIZE) {
+    binary += String.fromCharCode.apply(
+      null,
+      bytes.subarray(i, i + CHUNK_SIZE) as unknown as number[]
+    );
+  }
+  return btoa(binary);
+}
+
+/**
  * Handles incoming photo messages from Telegram.
  * Downloads the photo, stores it in R2, and optionally runs AI vision analysis.
  */
@@ -468,7 +484,9 @@ async function handlePhotoMessage(
 
     // 2. Get file path from Telegram API
     const getFileUrl = `https://api.telegram.org/bot${botToken}/getFile?file_id=${fileId}`;
-    const getFileResponse = await fetch(getFileUrl);
+    const getFileResponse = await fetch(getFileUrl, {
+      signal: AbortSignal.timeout(30000),
+    });
     const getFileData: any = await getFileResponse.json();
 
     if (!getFileData.ok || !getFileData.result?.file_path) {
@@ -486,7 +504,9 @@ async function handlePhotoMessage(
 
     // 3. Download the photo from Telegram's CDN
     const downloadUrl = `https://api.telegram.org/file/bot${botToken}/${filePath}`;
-    const photoResponse = await fetch(downloadUrl);
+    const photoResponse = await fetch(downloadUrl, {
+      signal: AbortSignal.timeout(30000),
+    });
     if (!photoResponse.ok) {
       logger.error("Failed to download photo from Telegram CDN", {
         status: photoResponse.status,
@@ -530,9 +550,7 @@ async function handlePhotoMessage(
     );
 
     // Convert to base64 for Workers AI
-    const photoBase64 = btoa(
-      String.fromCharCode(...new Uint8Array(photoArrayBuffer))
-    );
+    const photoBase64 = uint8ArrayToBase64(new Uint8Array(photoArrayBuffer));
     const dataUri = `data:image/${fileExt};base64,${photoBase64}`;
 
     const analysisPrompt = message.caption
