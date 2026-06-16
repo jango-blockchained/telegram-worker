@@ -16,9 +16,7 @@ import {
 } from "@jango-blockchained/hoox-shared/middleware";
 import type { InternalAuthEnv } from "@jango-blockchained/hoox-shared/middleware";
 import { createRouter } from "@jango-blockchained/hoox-shared/router";
-import { KVKeys } from "@jango-blockchained/hoox-shared/kvKeys";
 import type { ProcessRequestBody } from "@jango-blockchained/hoox-shared/types";
-import { trackAnalytics } from "@jango-blockchained/hoox-shared/analytics";
 import { healthCheck } from "@jango-blockchained/hoox-shared/health";
 
 import { handleWebhookRequest } from "./handlers/webhook";
@@ -73,7 +71,11 @@ router.get(
 router.post(
   ALERT_ENDPOINT,
   async (request: Request, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(logKvTimestamp(env, "CONFIG_KV").catch((err) => logger.error("logKvTimestamp failed", { error: String(err) })));
+    ctx.waitUntil(
+      logKvTimestamp(env, "CONFIG_KV").catch((err) =>
+        logger.error("logKvTimestamp failed", { error: String(err) })
+      )
+    );
     return await handleAlertRequest(request, env, ctx);
   }
 );
@@ -82,7 +84,11 @@ router.post(
 router.post(
   PROCESS_ENDPOINT,
   async (_request: Request, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(logKvTimestamp(env, "CONFIG_KV").catch((err) => logger.error("logKvTimestamp failed", { error: String(err) })));
+    ctx.waitUntil(
+      logKvTimestamp(env, "CONFIG_KV").catch((err) =>
+        logger.error("logKvTimestamp failed", { error: String(err) })
+      )
+    );
     return Response.redirect(
       new URL(ALERT_ENDPOINT, _request.url).toString(),
       308
@@ -95,7 +101,11 @@ router.post(
 router.post(
   WEBHOOK_ENDPOINT,
   async (request: Request, env: Env, ctx: ExecutionContext) => {
-    ctx.waitUntil(logKvTimestamp(env, "CONFIG_KV").catch((err) => logger.error("logKvTimestamp failed", { error: String(err) })));
+    ctx.waitUntil(
+      logKvTimestamp(env, "CONFIG_KV").catch((err) =>
+        logger.error("logKvTimestamp failed", { error: String(err) })
+      )
+    );
     return await handleWebhookRequest(request, env, ctx, logger);
   }
 );
