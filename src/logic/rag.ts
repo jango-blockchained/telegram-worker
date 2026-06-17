@@ -1,5 +1,6 @@
 import { toError } from "@jango-blockchained/hoox-shared/errors";
 import type { Logger } from "@jango-blockchained/hoox-shared/middleware";
+import type { VectorizeVector } from "@cloudflare/workers-types";
 
 // Define the structure for metadata stored with embeddings
 export interface TelegramMessageMetadata {
@@ -18,12 +19,18 @@ export interface VectorizeMatches {
   }>;
 }
 
+/** Shape of the Workers AI bge-base-en embedding response we consume. */
+interface EmbeddingResponse {
+  data?: number[][];
+  shape?: number[];
+}
+
 /**
  * Generates embeddings for the given text using Cloudflare Workers AI.
  */
 export async function generateEmbeddings(
   text: string | string[],
-  env: any,
+  env: Env,
   logger: Logger
 ): Promise<number[][]> {
   if (!env.AI) {
@@ -33,15 +40,17 @@ export async function generateEmbeddings(
 
   try {
     logger.info(`Generating embeddings for input text...`);
-    const response: any = await env.AI.run("@cf/baai/bge-base-en-v1.5", {
-      text,
-    });
+    const response: EmbeddingResponse = (await env.AI.run(
+      "@cf/baai/bge-base-en-v1.5",
+      {
+        text,
+      }
+    )) as EmbeddingResponse;
 
     if (!response || !response.data || !Array.isArray(response.data)) {
-      logger.error(
-        "Invalid response structure from AI embedding model:",
-        response
-      );
+      logger.error("Invalid response structure from AI embedding model", {
+        response: JSON.stringify(response),
+      });
       throw new Error("Failed to parse embeddings from AI response.");
     }
 
@@ -62,7 +71,7 @@ export async function generateEmbeddings(
 export async function insertEmbeddings(
   vectors: number[][],
   metadata: TelegramMessageMetadata[],
-  env: any,
+  env: Env,
   logger: Logger
 ): Promise<void> {
   if (vectors.length !== metadata.length) {
@@ -92,7 +101,9 @@ export async function insertEmbeddings(
     logger.info(
       `Inserting ${dataToInsert.length} vector(s) into Vectorize index...`
     );
-    const insertResult = await env.VECTORIZE_INDEX.insert(dataToInsert);
+    const insertResult = await env.VECTORIZE_INDEX.insert(
+      dataToInsert as VectorizeVector[]
+    );
     logger.info("Vectorize insertion successful", { result: insertResult });
   } catch (error: unknown) {
     const errorMsg = toError(error, "Unknown Vectorize error");
@@ -110,7 +121,7 @@ export async function insertEmbeddings(
  */
 export async function queryEmbeddings(
   queryText: string,
-  env: any,
+  env: Env,
   logger: Logger,
   topK: number = 3
 ): Promise<VectorizeMatches> {

@@ -3,19 +3,30 @@ import {
   createJsonResponse,
   toError,
 } from "@jango-blockchained/hoox-shared/errors";
-import { trackAnalytics } from "@jango-blockchained/hoox-shared/analytics";
+import {
+  trackAnalytics,
+  type AnalyticsEnv,
+} from "@jango-blockchained/hoox-shared/analytics";
 import type { Logger } from "@jango-blockchained/hoox-shared/middleware";
+import type { R2ObjectBody } from "@cloudflare/workers-types";
+
+/** Shape of the Telegram Bot API response we consume. */
+interface TelegramApiResponse {
+  ok?: boolean;
+  description?: string;
+  result?: unknown;
+}
 
 /**
  * Core logic to send a Telegram message.
  */
 export async function sendTelegramNotification(
   payload: { message: string; chatId?: string },
-  env: any,
+  env: Env,
   ctx: ExecutionContext,
   logger: Logger,
   requestId: string = "unknown"
-): Promise<any> {
+): Promise<unknown> {
   const botToken = env.TG_BOT_TOKEN_BINDING;
   const defaultChatId = env.TG_CHAT_ID_BINDING;
 
@@ -46,20 +57,24 @@ export async function sendTelegramNotification(
     signal: AbortSignal.timeout(10000),
   });
 
-  const responseData: any = await response.json();
+  const responseData: TelegramApiResponse = await response.json();
 
   if (!response.ok) {
-    logger.error(`[${requestId}] Telegram API Error:`, responseData);
+    logger.error(`[${requestId}] Telegram API Error`, {
+      body: JSON.stringify(responseData),
+    });
     throw new Error(
       `Telegram API request failed (${response.status}): ${responseData.description || "Unknown error"}`
     );
   }
 
-  logger.info(`[${requestId}] Telegram API Success Response:`, responseData);
+  logger.info(`[${requestId}] Telegram API Success Response`, {
+    body: JSON.stringify(responseData),
+  });
 
   // Track notification analytics (non-blocking)
   ctx.waitUntil(
-    trackAnalytics(env, "/track/notification", {
+    trackAnalytics(env as unknown as AnalyticsEnv, "/track/notification", {
       data: {
         type: "telegram",
         target: chatId,
@@ -77,7 +92,7 @@ export async function sendTelegramNotification(
 export async function sendTelegramReply(
   chatId: string | number,
   text: string,
-  env: any,
+  env: Env,
   logger: Logger
 ): Promise<Response> {
   const botToken = env.TG_BOT_TOKEN_BINDING;
@@ -126,9 +141,9 @@ export async function sendTelegramReply(
  * Fetches the latest trade signal object from R2.
  */
 export async function handleGetLatestTradeSignalR2(
-  env: any,
+  env: Env,
   logger: Logger
-): Promise<any | null> {
+): Promise<R2ObjectBody | null> {
   if (!env.UPLOADS_BUCKET) {
     logger.error("R2_BUCKET binding is not configured.");
     return null;
@@ -159,7 +174,7 @@ export async function handleGetLatestTradeSignalR2(
     logger.info(
       `Successfully retrieved object body for key: ${latestObject.key}`
     );
-    return objectBody;
+    return objectBody as unknown as R2ObjectBody;
   } catch (error: unknown) {
     logger.error("Error fetching latest trade signal from R2", {
       error: toError(error),

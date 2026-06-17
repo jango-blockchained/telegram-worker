@@ -1,5 +1,8 @@
 import { Errors, toError } from "@jango-blockchained/hoox-shared/errors";
-import { trackAnalytics } from "@jango-blockchained/hoox-shared/analytics";
+import {
+  trackAnalytics,
+  type AnalyticsEnv,
+} from "@jango-blockchained/hoox-shared/analytics";
 import type { Logger } from "@jango-blockchained/hoox-shared/middleware";
 import { KVKeys } from "@jango-blockchained/hoox-shared/kvKeys";
 import {
@@ -22,12 +25,18 @@ function escapeMarkdownV2(text: string): string {
   return text.replace(/([_*[\\]()~`>#+\\-=|{}.!])/g, "\\$1");
 }
 
+/** Fields from the Telegram getFile API response we consume. */
+interface TelegramGetFileResponse {
+  ok?: boolean;
+  result?: { file_path?: string };
+}
+
 /**
  * Handles incoming requests from the Telegram webhook.
  */
 export async function handleWebhookRequest(
   request: Request,
-  env: any,
+  env: Env,
   ctx: ExecutionContext,
   logger: Logger
 ): Promise<Response> {
@@ -135,7 +144,7 @@ export async function handleWebhookRequest(
 
   // 4. Analytics Tracking (fire-and-forget)
   ctx.waitUntil(
-    trackAnalytics(env, "/track/notification", {
+    trackAnalytics(env as unknown as AnalyticsEnv, "/track/notification", {
       data: {
         type: "telegram_webhook",
         target: String(chatId),
@@ -462,7 +471,7 @@ async function handlePhotoMessage(
   },
   chatId: number,
   messageId: number,
-  env: any,
+  env: Env,
   ctx: ExecutionContext,
   logger: Logger
 ): Promise<Response> {
@@ -487,7 +496,7 @@ async function handlePhotoMessage(
     const getFileResponse = await fetch(getFileUrl, {
       signal: AbortSignal.timeout(30000),
     });
-    const getFileData: any = await getFileResponse.json();
+    const getFileData: TelegramGetFileResponse = await getFileResponse.json();
 
     if (!getFileData.ok || !getFileData.result?.file_path) {
       logger.error("Failed to get file path from Telegram", { getFileData });

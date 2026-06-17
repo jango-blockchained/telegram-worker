@@ -14,7 +14,6 @@ import {
   requireInternalAuth,
   withRequestLog,
 } from "@jango-blockchained/hoox-shared/middleware";
-import type { InternalAuthEnv } from "@jango-blockchained/hoox-shared/middleware";
 import { createRouter } from "@jango-blockchained/hoox-shared/router";
 import type { ProcessRequestBody } from "@jango-blockchained/hoox-shared/types";
 import { healthCheck } from "@jango-blockchained/hoox-shared/health";
