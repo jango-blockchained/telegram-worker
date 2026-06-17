@@ -587,4 +587,267 @@ describe("handleWebhookRequest", () => {
     const lastBody = JSON.parse(lastCall[1].body);
     expect(lastBody.text).toContain("error searching");
   });
+
+  // ---------------------------------------------------------------------------
+  // Coverage: branching at webhook.ts:83-116 (message vs edited_message,
+  // chat.id, message_id, text, photo). These tests exercise the previously
+  // uncovered guard clauses and the photo/AI-vision dispatch path.
+  // ---------------------------------------------------------------------------
+
+  test("should skip update with neither text nor photo", async () => {
+    // Arrange — message with no text and no photo triggers the silent-skip
+    // branch at webhook.ts:109-114 (returns 200 OK with no processing).
+    mockFetch.mockClear();
+    const request = new Request("http://test.com/webhook", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": "test-webhook-secret",
+      },
+      body: JSON.stringify({
+        update_id: 12345,
+        message: {
+          message_id: 500,
+          chat: { id: 987654321, type: "private" },
+          date: Math.floor(Date.now() / 1000),
+          from: { id: 111, is_bot: false, first_name: "Test" },
+        },
+      }),
+    });
+
+    // Act
+    const response = await handleWebhookRequest(
+      request,
+      mockEnv,
+      mockCtx,
+      mockLogger
+    );
+
+    // Assert — silent skip: 200 OK, empty body, no downstream calls
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toBe("OK");
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockEnv.CONFIG_KV.get).not.toHaveBeenCalled();
+    expect(mockEnv.AI.run).not.toHaveBeenCalled();
+  });
+
+  test("should handle edited_message path", async () => {
+    // Arrange — update uses `edited_message` instead of `message`, exercising
+    // the fallback at webhook.ts:83. A /status command verifies that the
+    // edited message still flows through the command handler.
+    mockFetch.mockClear();
+    const request = new Request("http://test.com/webhook", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": "test-webhook-secret",
+      },
+      body: JSON.stringify({
+        update_id: 12346,
+        edited_message: {
+          message_id: 600,
+          chat: { id: 987654321, type: "private" },
+          date: Math.floor(Date.now() / 1000),
+          text: "/status",
+          from: { id: 111, is_bot: false, first_name: "Test" },
+        },
+      }),
+    });
+
+    // Act
+    const response = await handleWebhookRequest(
+      request,
+      mockEnv,
+      mockCtx,
+      mockLogger
+    );
+
+    // Assert — /status handler ran via the edited_message branch
+    expect(response.status).toBe(200);
+    expect(mockEnv.CONFIG_KV.get).toHaveBeenCalled();
+    expect(mockFetch).toHaveBeenCalled();
+    const lastCall = mockFetch.mock.calls[mockFetch.mock.calls.length - 1];
+    const lastBody = JSON.parse(lastCall[1].body);
+    expect(lastBody.text).toContain("Hoox System Status");
+  });
+
+  test("should skip when chat.id is missing", async () => {
+    // Arrange — message has a chat object but no `chat.id`, failing the guard
+    // at webhook.ts:84. Handler should silently return 200 OK.
+    mockFetch.mockClear();
+    const request = new Request("http://test.com/webhook", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": "test-webhook-secret",
+      },
+      body: JSON.stringify({
+        update_id: 12347,
+        message: {
+          message_id: 700,
+          chat: { type: "private" }, // No `id` field
+          date: Math.floor(Date.now() / 1000),
+          text: "/status",
+          from: { id: 111, is_bot: false, first_name: "Test" },
+        },
+      }),
+    });
+
+    // Act
+    const response = await handleWebhookRequest(
+      request,
+      mockEnv,
+      mockCtx,
+      mockLogger
+    );
+
+    // Assert — silent skip due to missing chat.id
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toBe("OK");
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockEnv.CONFIG_KV.get).not.toHaveBeenCalled();
+  });
+
+  test("should skip when message_id is missing", async () => {
+    // Arrange — message has chat.id but no message_id, failing the guard at
+    // webhook.ts:84. Handler should silently return 200 OK.
+    mockFetch.mockClear();
+    const request = new Request("http://test.com/webhook", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": "test-webhook-secret",
+      },
+      body: JSON.stringify({
+        update_id: 12348,
+        message: {
+          // No `message_id` field
+          chat: { id: 987654321, type: "private" },
+          date: Math.floor(Date.now() / 1000),
+          text: "/status",
+          from: { id: 111, is_bot: false, first_name: "Test" },
+        },
+      }),
+    });
+
+    // Act
+    const response = await handleWebhookRequest(
+      request,
+      mockEnv,
+      mockCtx,
+      mockLogger
+    );
+
+    // Assert — silent skip due to missing message_id
+    expect(response.status).toBe(200);
+    const body = await response.text();
+    expect(body).toBe("OK");
+    expect(mockFetch).not.toHaveBeenCalled();
+    expect(mockEnv.CONFIG_KV.get).not.toHaveBeenCalled();
+  });
+
+  test("should handle photo-only message (no text + photo)", async () => {
+    // Arrange — message with no text but a photo array triggers the
+    // AI-vision/photo branch at webhook.ts:96-106. Stub fetch for getFile,
+    // file download, and Telegram replies; stub AI.run for the vision model.
+    const fakeJpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+
+    mockFetch.mockReset();
+    mockFetch
+      .mockResolvedValueOnce(
+        // 1) Telegram getFile API call
+        new Response(
+          JSON.stringify({
+            ok: true,
+            result: { file_path: "photos/file_123.jpg" },
+          }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        // 2) File download — binary blob
+        new Response(fakeJpeg, { status: 200 })
+      )
+      .mockResolvedValueOnce(
+        // 3) sendTelegramReply("Analyzing...")
+        new Response(
+          JSON.stringify({ ok: true, result: { message_id: 555 } }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        )
+      )
+      .mockResolvedValueOnce(
+        // 4) sendTelegramReply(final analysis)
+        new Response(
+          JSON.stringify({ ok: true, result: { message_id: 556 } }),
+          {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }
+        )
+      );
+
+    mockEnv.AI.run = mock().mockResolvedValue({
+      response: "A bullish chart pattern visible on BTC/USDT 4h timeframe.",
+    });
+
+    const request = new Request("http://test.com/webhook", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": "test-webhook-secret",
+      },
+      body: JSON.stringify({
+        update_id: 12349,
+        message: {
+          message_id: 800,
+          chat: { id: 987654321, type: "private" },
+          date: Math.floor(Date.now() / 1000),
+          // No `text` field — photo-only path
+          photo: [
+            {
+              file_id: "AQA_small",
+              file_unique_id: "uniq_small",
+              width: 90,
+              height: 60,
+              file_size: 1200,
+            },
+            {
+              file_id: "AQA_large",
+              file_unique_id: "uniq_large",
+              width: 800,
+              height: 600,
+              file_size: 48000,
+            },
+          ],
+          from: { id: 111, is_bot: false, first_name: "Test" },
+        },
+      }),
+    });
+
+    // Act
+    const response = await handleWebhookRequest(
+      request,
+      mockEnv,
+      mockCtx,
+      mockLogger
+    );
+
+    // Assert — photo path completed: R2 received the upload, vision model ran
+    expect(response.status).toBe(200);
+    expect(mockEnv.UPLOADS_BUCKET.put).toHaveBeenCalled();
+    const putArgs = mockEnv.UPLOADS_BUCKET.put.mock.calls[0];
+    expect(putArgs[0]).toContain("telegram/photos/");
+    expect(putArgs[0]).toContain("_800.jpg");
+    expect(mockEnv.AI.run).toHaveBeenCalled();
+    const aiArgs = mockEnv.AI.run.mock.calls[0];
+    expect(aiArgs[0]).toContain("llama-3.2-11b-vision-instruct");
+  });
 });
