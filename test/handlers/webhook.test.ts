@@ -59,7 +59,12 @@ describe("handleWebhookRequest", () => {
     );
   });
 
-  test("passes through when webhook secret is not configured", async () => {
+  test("returns 401 when webhook secret is not configured (fail-closed)", async () => {
+    // Regression test for the 2026-06-27 worker audit C-4 finding.
+    // The webhook must reject ALL requests when TELEGRAM_SECRET_TOKEN
+    // is not set, not just the ones with a wrong secret. This prevents
+    // unauthenticated callers from reaching /kill_on and other operator
+    // commands during initial deployment or after a secret rotation.
     const envWithoutSecret = {
       ...mockEnv,
       TELEGRAM_SECRET_TOKEN: undefined,
@@ -78,7 +83,45 @@ describe("handleWebhookRequest", () => {
       mockLogger
     );
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(401);
+  });
+
+  test("returns 401 when received token is missing but secret is configured", async () => {
+    // The header must be present when the secret is configured. The
+    // fail-closed check is symmetric: missing token == wrong token.
+    const request = new Request("http://test.com/webhook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ update_id: 1, message: { text: "test" } }),
+    });
+
+    const response = await handleWebhookRequest(
+      request,
+      mockEnv,
+      mockCtx,
+      mockLogger
+    );
+
+    expect(response.status).toBe(401);
+  });
+
+  test("returns 401 when received token is missing but secret is configured", async () => {
+    // The header must be present when the secret is configured. The
+    // fail-closed check is symmetric: missing token == wrong token.
+    const request = new Request("http://test.com/webhook", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ update_id: 1, message: { text: "test" } }),
+    });
+
+    const response = await handleWebhookRequest(
+      request,
+      mockEnv,
+      mockCtx,
+      mockLogger
+    );
+
+    expect(response.status).toBe(401);
   });
 
   test("returns 401 when webhook secret doesn't match", async () => {

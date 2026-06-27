@@ -40,11 +40,16 @@ export async function handleWebhookRequest(
   ctx: ExecutionContext,
   logger: Logger
 ): Promise<Response> {
-  // 1. Security Check
+  // 1. Security Check (fail-closed)
   const secretToken = env.TELEGRAM_SECRET_TOKEN;
   const receivedToken = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
 
-  if (secretToken && receivedToken !== secretToken) {
+  // Reject if the secret is not configured OR if the received token
+  // does not match. Previously the check was fail-open (only rejected
+  // when a secret was set but mismatched), which let any unauthenticated
+  // request reach the /kill_on command when the operator had not yet
+  // set TELEGRAM_SECRET_TOKEN.
+  if (!secretToken || receivedToken !== secretToken) {
     logger.warn("Invalid or missing Telegram secret token received.");
     return Errors.unauthorized();
   }
