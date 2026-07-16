@@ -14,6 +14,7 @@ import {
   requireInternalAuth,
   withRequestLog,
 } from "@jango-blockchained/hoox-shared/middleware";
+import { TELEGRAM_ALERT_AUTH_KEY_FIELDS } from "@jango-blockchained/hoox-shared/service-bindings";
 import { createRouter } from "@jango-blockchained/hoox-shared/router";
 import type { ProcessRequestBody } from "@jango-blockchained/hoox-shared/types";
 import { healthCheck } from "@jango-blockchained/hoox-shared/health";
@@ -137,7 +138,11 @@ async function handleAlertRequest(
 
   try {
     // Auth first — never parse untrusted body before authorization
-    const authResult = requireInternalAuth(request, env);
+    const authResult = requireInternalAuth(
+      request,
+      env,
+      TELEGRAM_ALERT_AUTH_KEY_FIELDS
+    );
     if (authResult) return authResult;
 
     let raw: unknown;

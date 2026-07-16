@@ -177,6 +177,35 @@ describe("Telegram Worker", () => {
     global.fetch = fetchMock as unknown as typeof global.fetch;
   });
 
+  test("accepts TELEGRAM_INTERNAL_KEY_BINDING without legacy INTERNAL_KEY_BINDING", async () => {
+    mockEnv = createMockEnv({
+      internalKey: null,
+      botToken: TEST_BOT_TOKEN,
+      chatId: TEST_CHAT_ID,
+      webhookSecret: undefined,
+    });
+    (mockEnv as Record<string, unknown>).TELEGRAM_INTERNAL_KEY_BINDING =
+      "telegram-scoped-key";
+
+    const request = new Request(
+      `https://telegram-worker.workers.dev${PROCESS_ENDPOINT}`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Internal-Auth-Key": "telegram-scoped-key",
+        },
+        body: JSON.stringify({ message: "scoped key alert" }),
+      }
+    );
+    const response = await telegramWorker.fetch(
+      request as any,
+      mockEnv as any,
+      mockCtx
+    );
+    expect(response.status).toBe(200);
+  });
+
   test("rejects request with invalid internal key", async () => {
     mockEnv = createMockEnv({
       botToken: TEST_BOT_TOKEN,
