@@ -16,7 +16,6 @@ import {
 } from "@jango-blockchained/hoox-shared/middleware";
 import { TELEGRAM_ALERT_AUTH_KEY_FIELDS } from "@jango-blockchained/hoox-shared/service-bindings";
 import { createRouter } from "@jango-blockchained/hoox-shared/router";
-import type { ProcessRequestBody } from "@jango-blockchained/hoox-shared/types";
 import { healthCheck } from "@jango-blockchained/hoox-shared/health";
 
 import { handleWebhookRequest } from "./handlers/webhook";
@@ -43,9 +42,6 @@ interface NotificationPayload {
   message: string;
   chatId?: string; // Optional: if not provided, use default from TG_CHAT_ID_BINDING
 }
-
-// Payload for the legacy /process endpoint
-type TelegramProcessRequestBody = ProcessRequestBody<NotificationPayload>;
 
 // --- Constants ---
 const ALERT_ENDPOINT = "/alert"; // Internal notification endpoint (replaces legacy /process)
