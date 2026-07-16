@@ -3,7 +3,10 @@ import {
   trackAnalytics,
   type AnalyticsEnv,
 } from "@jango-blockchained/hoox-shared/analytics";
-import type { Logger } from "@jango-blockchained/hoox-shared/middleware";
+import {
+  timingSafeEqual,
+  type Logger,
+} from "@jango-blockchained/hoox-shared/middleware";
 import { KVKeys } from "@jango-blockchained/hoox-shared/kvKeys";
 import {
   generateEmbeddings,
@@ -40,7 +43,7 @@ export async function handleWebhookRequest(
   ctx: ExecutionContext,
   logger: Logger
 ): Promise<Response> {
-  // 1. Security Check (fail-closed)
+  // 1. Security Check (fail-closed, timing-safe)
   const secretToken = env.TELEGRAM_SECRET_TOKEN;
   const receivedToken = request.headers.get("X-Telegram-Bot-Api-Secret-Token");
 
@@ -49,7 +52,11 @@ export async function handleWebhookRequest(
   // when a secret was set but mismatched), which let any unauthenticated
   // request reach the /kill_on command when the operator had not yet
   // set TELEGRAM_SECRET_TOKEN.
-  if (!secretToken || receivedToken !== secretToken) {
+  if (
+    !secretToken ||
+    !receivedToken ||
+    !timingSafeEqual(receivedToken, secretToken)
+  ) {
     logger.warn("Invalid or missing Telegram secret token received.");
     return Errors.unauthorized();
   }
@@ -106,6 +113,34 @@ export async function handleWebhookRequest(
   const hasPhoto = message.photo && message.photo.length > 0;
   const senderId = message.from?.id ? String(message.from.id) : undefined;
 
+  // 3. Chat ID Authorization Check (FAIL-CLOSED) — before any command/photo work
+  // AUTHORIZED_CHAT_IDS must be configured. Without it, any Telegram user who
+  // can message the bot could run /kill_on or burn AI credits on photos.
+  // Placeholder "__SECRET__" (wrangler template) is treated as unset.
+  const authorizedChatIds = env.AUTHORIZED_CHAT_IDS as string | undefined;
+  if (
+    !authorizedChatIds ||
+    authorizedChatIds === "__SECRET__" ||
+    !authorizedChatIds.trim()
+  ) {
+    logger.error(
+      "AUTHORIZED_CHAT_IDS not configured — rejecting webhook command (fail-closed)"
+    );
+    // Return OK so Telegram does not retry; do not execute commands
+    return new Response("OK", { status: 200 });
+  }
+  const allowedIds = authorizedChatIds
+    .split(",")
+    .map((id: string) => id.trim())
+    .filter(Boolean);
+  if (allowedIds.length === 0 || !allowedIds.includes(String(chatId))) {
+    logger.warn(
+      `Unauthorized command from chat ${chatId} (sender: ${senderId || "unknown"})`
+    );
+    // Silently return OK to not reveal existence of auth filtering
+    return new Response("OK", { status: 200 });
+  }
+
   // If message has no text but has a photo, handle as photo/chart
   if (!message.text && hasPhoto) {
     logger.info("Received photo message — processing with AI vision");
@@ -129,23 +164,6 @@ export async function handleWebhookRequest(
 
   const messageText = message.text!.trim();
   const messageId = String(message.message_id);
-
-  // 3. Chat ID Authorization Check
-  // Only allow commands from authorized chat IDs (if configured)
-  const authorizedChatIds = env.AUTHORIZED_CHAT_IDS as string | undefined;
-  if (authorizedChatIds && authorizedChatIds !== "__SECRET__") {
-    const allowedIds = authorizedChatIds
-      .split(",")
-      .map((id: string) => id.trim())
-      .filter(Boolean);
-    if (allowedIds.length > 0 && !allowedIds.includes(String(chatId))) {
-      logger.warn(
-        `Unauthorized command from chat ${chatId} (sender: ${senderId || "unknown"}): "${messageText}"`
-      );
-      // Silently return OK to not reveal existence of auth filtering
-      return new Response("OK", { status: 200 });
-    }
-  }
 
   // 4. Analytics Tracking (fire-and-forget)
   ctx.waitUntil(

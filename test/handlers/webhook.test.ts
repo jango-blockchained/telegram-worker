@@ -33,7 +33,8 @@ describe("handleWebhookRequest", () => {
     mockEnv = {
       TELEGRAM_SECRET_TOKEN: "test-webhook-secret",
       TG_BOT_TOKEN_BINDING: "test-bot-token",
-      AUTHORIZED_CHAT_IDS: undefined,
+      // Fail-closed chat allowlist — default authorized chat used by most fixtures
+      AUTHORIZED_CHAT_IDS: "987654321",
       CONFIG_KV: {
         get: mock().mockResolvedValue(null),
         put: mock().mockResolvedValue(undefined),
@@ -211,6 +212,40 @@ describe("handleWebhookRequest", () => {
     );
 
     expect(response.status).toBe(200);
+  });
+
+  test("silently returns 200 when AUTHORIZED_CHAT_IDS is not configured (fail-closed)", async () => {
+    mockEnv.AUTHORIZED_CHAT_IDS = undefined;
+    const putMock = mockEnv.CONFIG_KV.put;
+
+    const request = new Request("http://test.com/webhook", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Telegram-Bot-Api-Secret-Token": "test-webhook-secret",
+      },
+      body: JSON.stringify({
+        update_id: 12345,
+        message: {
+          message_id: 100,
+          chat: { id: 987654321, type: "private" },
+          date: Math.floor(Date.now() / 1000),
+          text: "/kill_on",
+          from: { id: 111, is_bot: false, first_name: "Test" },
+        },
+      }),
+    });
+
+    const response = await handleWebhookRequest(
+      request,
+      mockEnv,
+      mockCtx,
+      mockLogger
+    );
+
+    expect(response.status).toBe(200);
+    // Must not execute kill switch without an allowlist
+    expect(putMock).not.toHaveBeenCalled();
   });
 
   test("silently returns 200 for unauthorized chat", async () => {

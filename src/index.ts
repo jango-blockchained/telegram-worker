@@ -121,6 +121,12 @@ export default {
 /**
  * Handles the internal notification request (/alert endpoint).
  * Called by other workers via service binding to send Telegram messages.
+ *
+ * Accepts both body shapes (H4 contract fix):
+ *  1. Nested ProcessRequestBody: { requestId?, payload: { message, chatId? } }
+ *  2. Flat: { requestId?, message, chatId? }
+ *
+ * Auth is checked BEFORE body parsing (fail-fast).
  */
 async function handleAlertRequest(
   request: Request,
@@ -130,14 +136,59 @@ async function handleAlertRequest(
   let incomingRequestId = "unknown";
 
   try {
-    const body: TelegramProcessRequestBody = await request.json();
-    incomingRequestId = body.requestId || "unknown";
-
+    // Auth first — never parse untrusted body before authorization
     const authResult = requireInternalAuth(request, env);
     if (authResult) return authResult;
 
+    let raw: unknown;
+    try {
+      raw = await request.json();
+    } catch {
+      return Errors.badRequest("Invalid JSON");
+    }
+
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return Errors.badRequest("Request body must be a JSON object");
+    }
+
+    const body = raw as Record<string, unknown>;
+    incomingRequestId =
+      typeof body.requestId === "string" ? body.requestId : "unknown";
+
+    // Normalize nested vs flat payload shapes
+    let notification: NotificationPayload | null = null;
+    if (
+      body.payload &&
+      typeof body.payload === "object" &&
+      !Array.isArray(body.payload)
+    ) {
+      const p = body.payload as Record<string, unknown>;
+      if (typeof p.message === "string") {
+        notification = {
+          message: p.message,
+          chatId: typeof p.chatId === "string" ? p.chatId : undefined,
+        };
+      }
+    } else if (typeof body.message === "string") {
+      notification = {
+        message: body.message,
+        chatId:
+          typeof body.chatId === "string"
+            ? body.chatId
+            : typeof body.chatId === "number"
+              ? String(body.chatId)
+              : undefined,
+      };
+    }
+
+    if (!notification) {
+      return Errors.badRequest(
+        "Missing message — send { message } or { payload: { message } }"
+      );
+    }
+
     const result = await sendTelegramNotification(
-      body.payload,
+      notification,
       env,
       ctx,
       logger,
@@ -147,7 +198,7 @@ async function handleAlertRequest(
     return createJsonResponse({ success: true, result }, 200);
   } catch (error: unknown) {
     const errorMsg = toError(error, "Internal Server Error");
-    logger.error(`[${incomingRequestId}] Error in handleProcessRequest:`, {
+    logger.error(`[${incomingRequestId}] Error in handleAlertRequest:`, {
       error: errorMsg,
     });
     return Errors.internal(errorMsg);

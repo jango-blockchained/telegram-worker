@@ -747,6 +747,8 @@ describe("Telegram Worker Webhook Handler (/webhook)", () => {
       chatId: TEST_CHAT_ID,
       webhookSecret: WEBHOOK_SECRET,
       internalKey: undefined,
+      // Fail-closed chat allowlist — matches chatId 987654321 used by fixtures
+      authorizedChatIds: "987654321",
     });
     mockEnv.AI.run = mockAiRun;
     mockEnv.VECTORIZE_INDEX.insert = mockVectorizeInsert;
